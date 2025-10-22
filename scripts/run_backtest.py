@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
-import os
-import sys
 import logging
+import sys
 from pathlib import Path
 
 # Allow running from the repo without installing the package
@@ -77,13 +76,15 @@ def main() -> None:
         if k in ("sharpe", "max_drawdown"):
             print(f"  {k:>13}: {v:.3f}")
         else:
-            print(f"  {k:>13}: {v*100:.2f}%")
+            print(f"  {k:>13}: {v * 100:.2f}%")
 
     # Trade stats
     if res.trades:
         print("Trade Stats:")
+
         def fmt_pct(x: float) -> str:
-            return f"{x*100:.2f}%"
+            return f"{x * 100:.2f}%"
+
         print(f"  {'trades':>13}: {int(m.get('trade_trades', 0))}")
         print(f"  {'win_rate':>13}: {fmt_pct(m.get('trade_win_rate', 0.0))}")
         print(f"  {'avg_win':>13}: {m.get('trade_avg_win', 0.0):.2f}")

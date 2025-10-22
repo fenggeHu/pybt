@@ -1,9 +1,6 @@
-from __future__ import annotations
-
 from collections import defaultdict
-from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, List, Tuple
 
 from .trades import Trade
 
@@ -57,4 +54,3 @@ def trade_stats(trades: List[Trade]) -> Dict[str, float]:
         "avg_ret": sum(t.ret for t in trades) / n,
         "avg_hold_days": sum(t.holding_days for t in trades) / n,
     }
-

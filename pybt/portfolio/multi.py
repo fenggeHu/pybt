@@ -1,9 +1,6 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple
 
-from pybt.data.bar import Bar
 from pybt.execution.broker import Fill
 
 
@@ -14,8 +11,8 @@ class MultiPortfolio:
     positions: Dict[str, int] = field(init=False, default_factory=dict)
     entry_price: Dict[str, float] = field(init=False, default_factory=dict)  # cost basis for current side
     equity_curve: List[Tuple[str, float]] = field(init=False, default_factory=list)
-    rf_daily: float = 0.0         # interest earned on positive cash
-    borrow_daily: float = 0.0     # interest paid on negative cash
+    rf_daily: float = 0.0  # interest earned on positive cash
+    borrow_daily: float = 0.0  # interest paid on negative cash
 
     def __post_init__(self) -> None:
         self.cash = float(self.initial_cash)

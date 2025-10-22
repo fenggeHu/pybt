@@ -1,14 +1,13 @@
-
 import logging
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+from pybt.analytics.trades import TradeLedger
 from pybt.data.bar import Bar
 from pybt.execution.broker import SimBroker, Fill
 from pybt.portfolio.portfolio import Portfolio
 from pybt.risk.metrics import equity_to_returns, max_drawdown, sharpe_ratio
 from pybt.strategy.base import Strategy
-from pybt.analytics.trades import TradeLedger
 
 
 @dataclass
@@ -20,10 +19,10 @@ class BacktestResult:
 
 
 def run_backtest(
-    bars: List[Bar],
-    strategy: Strategy,
-    portfolio: Optional[Portfolio] = None,
-    broker: Optional[SimBroker] = None,
+        bars: List[Bar],
+        strategy: Strategy,
+        portfolio: Optional[Portfolio] = None,
+        broker: Optional[SimBroker] = None,
 ) -> BacktestResult:
     portfolio = portfolio or Portfolio()
     broker = broker or SimBroker()

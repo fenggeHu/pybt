@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from pybt.execution.broker import Fill
 
@@ -11,7 +9,7 @@ from pybt.execution.broker import Fill
 class Trade:
     symbol: str
     side: str  # 'LONG' or 'SHORT'
-    qty: int   # positive executed quantity for this roundtrip (absolute)
+    qty: int  # positive executed quantity for this roundtrip (absolute)
     entry_dt: str
     entry_px: float
     exit_dt: str
@@ -118,4 +116,3 @@ class TradeLedger:
 
     def get_trades(self) -> List[Trade]:
         return list(self.trades)
-

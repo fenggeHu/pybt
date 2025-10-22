@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Dict, List
 
@@ -18,4 +16,3 @@ def load_dir_csvs(dir_path: str) -> Dict[str, List[Bar]]:
         sym = p.stem.upper()
         out[sym] = load_csv(DataSpec(path=p))
     return out
-

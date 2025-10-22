@@ -1,9 +1,9 @@
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional
 
+from pybt.allocation.weights import WeightAllocator
+from pybt.analytics.trades import TradeLedger
 from pybt.data.bar import Bar
 from pybt.data.feed import DataFeed
 from pybt.execution.broker import SimBroker, Fill
@@ -12,8 +12,6 @@ from pybt.portfolio.multi import MultiPortfolio
 from pybt.risk.metrics import equity_to_returns, max_drawdown, sharpe_ratio
 from pybt.risk.rules import RiskConfig, RiskManager
 from pybt.strategy.base import Strategy, Signal
-from pybt.analytics.trades import TradeLedger
-from pybt.allocation.weights import WeightAllocator
 
 
 @dataclass
@@ -33,12 +31,12 @@ def _signal_to_order(symbol: str, current_units: int, sig: Signal) -> Optional[O
 
 
 def run_backtest_multi(
-    data_by_symbol: Dict[str, List[Bar]],
-    strategies: Dict[str, Strategy],
-    portfolio: Optional[MultiPortfolio] = None,
-    broker: Optional[SimBroker] = None,
-    risk: Optional[RiskManager] = None,
-    allocator: Optional[WeightAllocator] = None,
+        data_by_symbol: Dict[str, List[Bar]],
+        strategies: Dict[str, Strategy],
+        portfolio: Optional[MultiPortfolio] = None,
+        broker: Optional[SimBroker] = None,
+        risk: Optional[RiskManager] = None,
+        allocator: Optional[WeightAllocator] = None,
 ) -> BacktestResult:
     portfolio = portfolio or MultiPortfolio()
     broker = broker or SimBroker()

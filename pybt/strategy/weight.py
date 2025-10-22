@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Optional
 
 from pybt.data.bar import Bar
@@ -29,14 +27,14 @@ class SmaTrendWeightStrategy(Strategy):
     """
 
     def __init__(
-        self,
-        symbol: str,
-        fast: int = 10,
-        slow: int = 30,
-        long_weight: float = 0.5,
-        short_weight: float = 0.0,
-        neutral_weight: float = 0.0,
-        change_only: bool = True,
+            self,
+            symbol: str,
+            fast: int = 10,
+            slow: int = 30,
+            long_weight: float = 0.5,
+            short_weight: float = 0.0,
+            neutral_weight: float = 0.0,
+            change_only: bool = True,
     ):
         assert fast < slow, "fast must be < slow"
         self.symbol = symbol

@@ -1,6 +1,7 @@
 pybt - Minimal Quant Backtesting Skeleton
 
 Features
+
 - Single-symbol, event-lite backtester
 - Multi-symbol backtester with per-symbol strategies
 - CSV loader or synthetic data generator
@@ -13,21 +14,25 @@ Features
 - Trade ledger + stats; monthly/yearly returns; CSV/JSON export; config and logging
 
 Quick start
+
 - Run: python3 scripts/run_backtest.py --csv data/SPY_sample.csv --fast 10 --slow 30
 - Or without a CSV, it will auto-generate synthetic data.
- - Exports: add `--out-dir out` to dump `equity.csv`, `trades.csv`, `metrics.json`.
- - Config: use `--config configs/example_single.json` to load defaults, CLI overrides.
- - Logging: `--log DEBUG` for detailed fills.
+- Exports: add `--out-dir out` to dump `equity.csv`, `trades.csv`, `metrics.json`.
+- Config: use `--config configs/example_single.json` to load defaults, CLI overrides.
+- Logging: `--log DEBUG` for detailed fills.
 
 Multi-symbol
+
 - Prepare CSVs in `data/` like `AAPL.csv, MSFT.csv` (date,open,high,low,close,volume)
 - SMA example: python3 scripts/run_backtest_multi.py --data-dir data --fast 10 --slow 30 --max-units 5
 - Breakout example (stop orders): python3 scripts/run_breakout_multi.py --data-dir data --lookback 20 --qty 1
 - You can also pass `--out-dir`, `--config`, `--log` here.
 - Weight-based SMA trend (targets via allocator):
-  python3 scripts/run_weighted_multi.py --data-dir data --fast 10 --slow 30 --long-weight 0.5 --max-leverage 1.0 --allow-short --short-weight -0.5
+  python3 scripts/run_weighted_multi.py --data-dir data --fast 10 --slow 30 --long-weight 0.5 --max-leverage 1.0
+  --allow-short --short-weight -0.5
 
 Project layout
+
 - pybt/data: Bar model and CSV loader
 - pybt/data/feed.py: Simple multi-symbol event feed
 - pybt/indicators: Basic SMA/EMA
@@ -45,6 +50,7 @@ Project layout
 - pybt/allocation/weights.py: Weight allocator converting weights→units with leverage clamp
 
 Notes
+
 - Standard library only. You can plug pandas later if desired.
 - Prices filled at bar.open; PnL marked at bar.close.
 - Limit/Stop fills use OHLC logic with gap handling; simplifications apply.

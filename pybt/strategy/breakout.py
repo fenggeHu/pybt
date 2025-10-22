@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from collections import deque
-from typing import Deque, List, Optional
+from typing import Deque, List
 
 from pybt.data.bar import Bar
 from pybt.execution.order import Order
@@ -53,4 +51,3 @@ class DonchianBreakout(Strategy):
     # Optional hooks for engine to sync position
     def sync_position(self, units: int) -> None:
         self.position = int(units)
-

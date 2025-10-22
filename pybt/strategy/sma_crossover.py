@@ -1,4 +1,3 @@
-
 from typing import Optional
 
 from pybt.data.bar import Bar

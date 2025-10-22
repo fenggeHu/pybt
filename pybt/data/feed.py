@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, List, Tuple
 
 from .bar import Bar
 
@@ -45,4 +43,3 @@ class DataFeed:
                     items.append((sym, b))
             if items:
                 yield FeedEvent(dt_iso=dt.isoformat(), items=items)
-

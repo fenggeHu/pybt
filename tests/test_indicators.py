@@ -1,10 +1,12 @@
 import unittest
+
 from pybt.indicators.basic import SMA, EMA
+
 
 class TestIndicators(unittest.TestCase):
     def test_sma(self):
         sma = SMA(3)
-        vals = [1,2,3,4]
+        vals = [1, 2, 3, 4]
         outs = [sma.update(x) for x in vals]
         self.assertIsNone(outs[0])
         self.assertIsNone(outs[1])
@@ -16,6 +18,7 @@ class TestIndicators(unittest.TestCase):
         v1 = ema.update(1)
         v2 = ema.update(2)
         self.assertGreater(v2, v1)
+
 
 if __name__ == '__main__':
     unittest.main()

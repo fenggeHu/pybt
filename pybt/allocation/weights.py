@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import math
 from dataclasses import dataclass
 from typing import Dict
@@ -63,4 +61,3 @@ class WeightAllocator:
         else:
             qty = round(factor) * step
         return int(qty)
-

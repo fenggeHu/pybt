@@ -1,9 +1,8 @@
-
 import csv
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import List, Optional
 
 from .bar import Bar
 

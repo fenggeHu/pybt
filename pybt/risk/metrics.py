@@ -1,7 +1,6 @@
-
-from typing import Iterable, List, Tuple
 import math
 import statistics as stats
+from typing import Iterable, List, Tuple
 
 
 def equity_to_returns(equity_curve: List[Tuple[str, float]]) -> List[float]:

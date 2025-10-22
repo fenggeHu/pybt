@@ -1,7 +1,5 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from pybt.execution.order import Order
 from pybt.portfolio.multi import MultiPortfolio
@@ -10,7 +8,7 @@ from pybt.portfolio.multi import MultiPortfolio
 @dataclass
 class RiskConfig:
     max_units_per_symbol: int = 100  # hard cap per symbol
-    stop_loss_pct: float = 0.0       # e.g. 0.1 = 10% stop; 0 disables
+    stop_loss_pct: float = 0.0  # e.g. 0.1 = 10% stop; 0 disables
 
 
 class RiskManager:
@@ -52,4 +50,3 @@ class RiskManager:
                     # Close short
                     orders.append(Order(symbol=sym, qty=-units, type="MARKET", tag="stop_loss"))
         return orders
-
