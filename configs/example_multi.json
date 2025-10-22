@@ -6,6 +6,7 @@
   "cash": 100000,
   "slip_bps": 1.0,
   "comm": 0.0,
+  "volume_limit": 1.0,
   "max_units": 5,
   "stop_pct": 0.0,
   "rf_daily": 0.0001,

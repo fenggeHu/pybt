@@ -27,7 +27,7 @@ def _signal_to_order(symbol: str, current_units: int, sig: Signal) -> Optional[O
     delta = target - current_units
     if delta == 0:
         return None
-    return Order(symbol=symbol, qty=delta, type="MARKET", tag="to_target")
+    return Order(symbol=symbol, qty=delta, type="MARKET", tag="to_target", allow_partial=True, time_in_force="GTC")
 
 
 def run_backtest_multi(
@@ -46,6 +46,7 @@ def run_backtest_multi(
 
     feed = DataFeed(data_by_symbol)
     last_close: Dict[str, float] = {}
+    order_book: Dict[str, List[Dict[str, object]]] = {}
 
     log = logging.getLogger(__name__)
     for evt in feed:
@@ -53,7 +54,7 @@ def run_backtest_multi(
         # 1) Gather strategy intents per symbol
         desired_targets: Dict[str, int] = {}
         weight_targets: Dict[str, float] = {}
-        symbol_orders: Dict[str, List[Order]] = {}
+        new_orders: Dict[str, List[Order]] = {}
         for sym, bar in evt.items:
             last_close[sym] = bar.close
             strat = strategies.get(sym)
@@ -73,9 +74,8 @@ def run_backtest_multi(
                     desired_targets[sym] = int(out.target_units)
                 elif out.target_weight is not None:
                     weight_targets[sym] = float(out.target_weight)
-            elif isinstance(out, list):
-                # list[Order] path (optional if user strategies implement it)
-                symbol_orders[sym] = [o for o in out if isinstance(o, Order)]
+            if isinstance(out, list):
+                new_orders.setdefault(sym, []).extend([o for o in out if isinstance(o, Order)])
 
         if weight_targets:
             if allocator is not None:
@@ -94,27 +94,52 @@ def run_backtest_multi(
                 cur = portfolio.position(sym)
                 od = _signal_to_order(sym, cur, Signal(target_units=tgt))
                 if od is not None:
-                    symbol_orders.setdefault(sym, []).append(od)
+                    new_orders.setdefault(sym, []).append(od)
 
         # 3) Protective stops
         stop_orders = risk.protective_stop_orders(portfolio, last_close)
         for od in stop_orders:
-            symbol_orders.setdefault(od.symbol, []).append(od)
+            new_orders.setdefault(od.symbol, []).append(od)
 
         # 4) Execute orders for symbols present today
         for sym, bar in evt.items:
-            orders = symbol_orders.get(sym, [])
-            if not orders:
+            book = order_book.setdefault(sym, [])
+            if sym in new_orders:
+                for order in new_orders[sym]:
+                    book.append({"order": order, "remaining": order.qty})
+
+            if not book:
                 continue
-            # Convert dataclass to simple dicts for broker
-            dicts = [o.to_dict() for o in orders]
-            got = broker.process_orders(sym, bar, portfolio.position(sym), dicts)
-            for f in got:
-                portfolio.on_fill(f)
-                fills.append(f)
-                ledger.on_fill(f)
-                if log.isEnabledFor(logging.DEBUG):
-                    log.debug(f"Fill {sym} {f.dt} qty={f.qty} px={f.price:.4f} comm={f.commission:.4f}")
+
+            next_book: List[Dict[str, object]] = []
+            for entry in book:
+                order: Order = entry["order"]  # type: ignore[index]
+                remaining = int(entry.get("remaining", order.qty))
+                if remaining == 0:
+                    continue
+                tif = order.time_in_force.upper()
+
+                temp_order = order.with_qty(remaining)
+                fills_today, executed_qtys = broker.process_orders(sym, bar, portfolio.position(sym), [temp_order])
+                exec_qty = executed_qtys[0] if executed_qtys else 0
+                for f in fills_today:
+                    portfolio.on_fill(f)
+                    fills.append(f)
+                    ledger.on_fill(f)
+                    if log.isEnabledFor(logging.DEBUG):
+                        log.debug(f"Fill {sym} {f.dt} qty={f.qty} px={f.price:.4f} comm={f.commission:.4f} tag={f.tag}")
+
+                remaining -= exec_qty
+                if remaining != 0:
+                    if tif == 'GTC':
+                        entry["remaining"] = remaining
+                        next_book.append(entry)
+                    elif tif == 'DAY':
+                        # expires end of day
+                        continue
+                    else:  # IOC or others -> drop remainder
+                        continue
+            order_book[sym] = next_book
 
         # 5) Mark-to-market
         portfolio.mark_to_market(dt_iso, last_close)

@@ -10,6 +10,7 @@ Features
 - Simulated broker with bps slippage and per-share commission
 - Portfolio with mark-to-market equity; Sharpe, MDD, CAGR metrics
 - Limit/Stop/Market orders; simple risk rules (max units, protective stop)
+- Order lifecycle with DAY/GTC/IOC support plus partial fills capped by volume share
 - Optional weight allocator (leverage clamp, lot rounding) + SMA weight strategy demo
 - Trade ledger + stats; monthly/yearly returns; CSV/JSON export; config and logging
 
@@ -30,6 +31,7 @@ Multi-symbol
 - Weight-based SMA trend (targets via allocator):
   python3 scripts/run_weighted_multi.py --data-dir data --fast 10 --slow 30 --long-weight 0.5 --max-leverage 1.0
   --allow-short --short-weight -0.5
+- Limit participation with `--volume-limit 0.2` to cap fills at 20% of daily volume.
 
 Project layout
 

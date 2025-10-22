@@ -31,6 +31,7 @@ def main() -> None:
     ap.add_argument("--slip-bps", type=float, default=1.0)
     ap.add_argument("--comm", type=float, default=0.0, help="Commission per share")
     ap.add_argument("--comm-rate", type=float, default=0.0, help="Commission as rate of notional")
+    ap.add_argument("--volume-limit", type=float, default=1.0, help="Max fraction of daily volume used per order (0-1)")
     ap.add_argument("--max-units", type=int, default=100)
     ap.add_argument("--stop-pct", type=float, default=0.0, help="Protective stop loss percent, e.g. 0.1 for 10%")
     ap.add_argument("--rf-daily", type=float, default=0.0, help="Daily interest on positive cash (e.g. 0.0001)")
@@ -57,7 +58,12 @@ def main() -> None:
         return
 
     strategies = {sym: SmaCrossStrategy(args.fast, args.slow, args.allow_short) for sym in data.keys()}
-    broker = SimBroker(slippage_bps=args.slip_bps, commission_per_share=args.comm, commission_rate=args.comm_rate)
+    broker = SimBroker(
+        slippage_bps=args.slip_bps,
+        commission_per_share=args.comm,
+        commission_rate=args.comm_rate,
+        volume_limit_pct=args.volume_limit,
+    )
     port = MultiPortfolio(initial_cash=args.cash, rf_daily=args.rf_daily, borrow_daily=args.borrow_daily)
     risk = RiskManager(RiskConfig(max_units_per_symbol=args.max_units, stop_loss_pct=args.stop_pct))
 

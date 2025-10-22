@@ -1,0 +1,14 @@
+{
+  "cagr": -0.00026499823952730317,
+  "max_drawdown": -0.00036433253751597556,
+  "monthly_count": 10.0,
+  "sharpe": -1.4894654958818399,
+  "total_return": -0.00022609416669994165,
+  "trade_avg_hold_days": 35.36842105263158,
+  "trade_avg_loss": -2.5230149100000014,
+  "trade_avg_ret": -0.0066261885969443575,
+  "trade_avg_win": 2.847076802500002,
+  "trade_profit_factor": 0.30091795242964564,
+  "trade_trades": 19.0,
+  "trade_win_rate": 0.21052631578947367
+}

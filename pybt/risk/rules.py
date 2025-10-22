@@ -44,9 +44,27 @@ class RiskManager:
             if units > 0:
                 if px <= entry * (1.0 - sl):
                     # Close long
-                    orders.append(Order(symbol=sym, qty=-units, type="MARKET", tag="stop_loss"))
+                    orders.append(
+                        Order(
+                            symbol=sym,
+                            qty=-units,
+                            type="MARKET",
+                            tag="stop_loss",
+                            allow_partial=False,
+                            time_in_force="IOC",
+                        )
+                    )
             else:
                 if px >= entry * (1.0 + sl):
                     # Close short
-                    orders.append(Order(symbol=sym, qty=-units, type="MARKET", tag="stop_loss"))
+                    orders.append(
+                        Order(
+                            symbol=sym,
+                            qty=-units,
+                            type="MARKET",
+                            tag="stop_loss",
+                            allow_partial=False,
+                            time_in_force="IOC",
+                        )
+                    )
         return orders
