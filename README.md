@@ -56,3 +56,4 @@ Notes
 - Standard library only. You can plug pandas later if desired.
 - Prices filled at bar.open; PnL marked at bar.close.
 - Limit/Stop fills use OHLC logic with gap handling; simplifications apply.
+- Web 控制台（Vue 3 + Vite）位于 `web/`，运行 `npm install && npm run dev` 可启动前端界面。
