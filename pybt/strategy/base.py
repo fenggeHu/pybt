@@ -7,12 +7,14 @@ from pybt.data.bar import Bar
 
 @dataclass
 class Signal:
-    """Desired target position in units for a single instrument.
+    """Desired target for a single instrument.
 
-    This is purposely simple (single-symbol demo). Positive = long, negative = short.
+    - Set `target_units` for absolute share/contract targets (default path).
+    - Alternatively set `target_weight` (fraction of equity). Requires allocator support.
     """
 
-    target_units: int
+    target_units: Optional[int] = None
+    target_weight: Optional[float] = None
 
 
 class Strategy:

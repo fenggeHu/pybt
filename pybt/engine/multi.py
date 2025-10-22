@@ -13,6 +13,7 @@ from pybt.risk.metrics import equity_to_returns, max_drawdown, sharpe_ratio
 from pybt.risk.rules import RiskConfig, RiskManager
 from pybt.strategy.base import Strategy, Signal
 from pybt.analytics.trades import TradeLedger
+from pybt.allocation.weights import WeightAllocator
 
 
 @dataclass
@@ -37,6 +38,7 @@ def run_backtest_multi(
     portfolio: Optional[MultiPortfolio] = None,
     broker: Optional[SimBroker] = None,
     risk: Optional[RiskManager] = None,
+    allocator: Optional[WeightAllocator] = None,
 ) -> BacktestResult:
     portfolio = portfolio or MultiPortfolio()
     broker = broker or SimBroker()
@@ -52,6 +54,7 @@ def run_backtest_multi(
         dt_iso = evt.dt_iso
         # 1) Gather strategy intents per symbol
         desired_targets: Dict[str, int] = {}
+        weight_targets: Dict[str, float] = {}
         symbol_orders: Dict[str, List[Order]] = {}
         for sym, bar in evt.items:
             last_close[sym] = bar.close
@@ -68,10 +71,22 @@ def run_backtest_multi(
             if out is None:
                 continue
             if hasattr(out, 'target_units'):
-                desired_targets[sym] = int(out.target_units)
+                if out.target_units is not None:
+                    desired_targets[sym] = int(out.target_units)
+                elif out.target_weight is not None:
+                    weight_targets[sym] = float(out.target_weight)
             elif isinstance(out, list):
                 # list[Order] path (optional if user strategies implement it)
                 symbol_orders[sym] = [o for o in out if isinstance(o, Order)]
+
+        if weight_targets:
+            if allocator is not None:
+                equity = portfolio.total_equity(last_close)
+                weight_units = allocator.weights_to_units(weight_targets, equity=equity, prices=last_close)
+                for sym, units in weight_units.items():
+                    desired_targets[sym] = units
+            else:
+                log.warning("Weight signals received but no allocator provided; ignoring weights.")
 
         # 2) Risk: clamp targets
         if desired_targets:

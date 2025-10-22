@@ -70,3 +70,11 @@ class MultiPortfolio:
                 equity += units * px
         self.equity_curve.append((dt_iso, equity))
         return equity
+
+    def total_equity(self, prices: Dict[str, float]) -> float:
+        equity = self.cash
+        for sym, units in self.positions.items():
+            px = prices.get(sym)
+            if px is not None:
+                equity += units * px
+        return equity

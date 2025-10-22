@@ -35,6 +35,8 @@ def run_backtest(
     for bar in bars:
         sig = strategy.on_bar(bar)
         if sig is not None:
+            if sig.target_units is None:
+                raise ValueError("Weight-based signals require the multi-asset engine with an allocator")
             fill = broker.fill_to_target(bar, current_units=portfolio.units, target_units=sig.target_units)
             if fill is not None:
                 # Tag single-asset symbol for analytics
