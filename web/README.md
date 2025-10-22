@@ -12,6 +12,7 @@ npm run dev   # 默认 http://localhost:5173
 
 - 默认将 `/api` 代理到 `http://localhost:8000`（参考 `vite.config.ts`）。
 - 创建 `.env.local` 可覆盖 `VITE_API_BASE_URL` 等配置。
+- 需先启动 FastAPI 后端：`pip install -r ../requirements.txt && python ../scripts/run_api.py`
 
 ## 目录结构
 

@@ -57,3 +57,4 @@ Notes
 - Prices filled at bar.open; PnL marked at bar.close.
 - Limit/Stop fills use OHLC logic with gap handling; simplifications apply.
 - Web 控制台（Vue 3 + Vite）位于 `web/`，运行 `npm install && npm run dev` 可启动前端界面。
+- FastAPI 后端位于 `api/`, 运行 `python scripts/run_api.py`（需先 `pip install -r requirements.txt`）即可开启 REST API，供前端调用。
