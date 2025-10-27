@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pybt"
+version = "0.1.0"
+description = "Modular event-driven backtesting framework"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=22.0.0",
+    "mypy>=1.0.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["pybt*"]
+exclude = ["tests*", "third_party*"]
+
+[tool.black]
+line-length = 88
+extend-exclude = "third_party"
+
+[tool.mypy]
+python_version = "3.10"
+disallow_untyped_defs = true
+warn_return_any = true
+
+[[tool.mypy.overrides]]
+module = "third_party.*"
+ignore_errors = true
