@@ -57,6 +57,7 @@ class ADataLiveFeed(DataFeed):
             low=low,
             close=price,
             volume=float(quote.get("volume", 0.0)),
+            amount=float(quote.get("amount", 0.0)),
         )
         self._last_price = price
         self._ticks += 1
@@ -71,4 +72,5 @@ class ADataLiveFeed(DataFeed):
         return {
             "price": float(row["price"]),
             "volume": float(row.get("volume", 0.0)),
+            "amount": float(row.get("amount", 0.0)),
         }
