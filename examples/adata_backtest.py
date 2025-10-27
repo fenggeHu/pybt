@@ -24,9 +24,9 @@ from pybt.strategies import MovingAverageCrossStrategy
 
 
 def fetch_stock_data(
-    stock_code: str,
-    start_date: str,
-    end_date: str,
+        stock_code: str,
+        start_date: str,
+        end_date: str,
 ) -> List[Bar]:
     """
     使用 adata 获取股票历史数据并转换为 Bar 对象
@@ -62,7 +62,7 @@ def fetch_stock_data(
             timestamp = datetime.strptime(trade_date_str, "%Y-%m-%d")
         else:
             timestamp = datetime.strptime(trade_date_str, "%Y%m%d")
-        
+
         bar = Bar(
             symbol=stock_code,
             timestamp=timestamp,
@@ -84,7 +84,7 @@ def main() -> None:
     主回测流程
     """
     # ========== 配置参数 ==========
-    stock_code = "300502"  # 平安银行
+    stock_code = "300502"
     start_date = "2025-09-01"
     end_date = "2025-10-31"
     initial_cash = 100_000.0  # 初始资金 10 万
