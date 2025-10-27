@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Iterator, List, Sequence
 
 from pybt.core.events import MarketEvent

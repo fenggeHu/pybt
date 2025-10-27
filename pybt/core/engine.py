@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Iterable, List, Optional, Sequence
@@ -34,15 +32,15 @@ class BacktestEngine:
     """
 
     def __init__(
-        self,
-        data_feed: DataFeed,
-        strategies: Sequence[Strategy],
-        portfolio: Portfolio,
-        execution: ExecutionHandler,
-        risk_managers: Optional[Sequence[RiskManager]] = None,
-        reporters: Optional[Sequence[PerformanceReporter]] = None,
-        bus: Optional[EventBus] = None,
-        config: Optional[EngineConfig] = None,
+            self,
+            data_feed: DataFeed,
+            strategies: Sequence[Strategy],
+            portfolio: Portfolio,
+            execution: ExecutionHandler,
+            risk_managers: Optional[Sequence[RiskManager]] = None,
+            reporters: Optional[Sequence[PerformanceReporter]] = None,
+            bus: Optional[EventBus] = None,
+            config: Optional[EngineConfig] = None,
     ) -> None:
         self.data_feed = data_feed
         self.strategies: List[Strategy] = list(strategies)

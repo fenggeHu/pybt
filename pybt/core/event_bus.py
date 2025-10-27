@@ -1,10 +1,7 @@
-from __future__ import annotations
-
 from collections import defaultdict, deque
 from typing import Callable, Deque, Iterable, List, MutableMapping, Type, TypeVar
 
 from .events import Event
-
 
 EventHandler = Callable[[Event], None]
 E = TypeVar("E", bound=Event)

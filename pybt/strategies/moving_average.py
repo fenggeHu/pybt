@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from collections import deque
 from statistics import mean
 from typing import Deque
@@ -15,11 +13,11 @@ class MovingAverageCrossStrategy(Strategy):
     """
 
     def __init__(
-        self,
-        symbol: str,
-        short_window: int = 20,
-        long_window: int = 50,
-        strategy_id: str = "mac",
+            self,
+            symbol: str,
+            short_window: int = 20,
+            long_window: int = 50,
+            strategy_id: str = "mac",
     ) -> None:
         super().__init__()
         if short_window >= long_window:
@@ -43,7 +41,7 @@ class MovingAverageCrossStrategy(Strategy):
         if len(self._prices) < self.long_window:
             return
 
-        short_ma = mean(list(self._prices)[-self.short_window :])
+        short_ma = mean(list(self._prices)[-self.short_window:])
         long_ma = mean(self._prices)
 
         direction: SignalDirection | None = None
