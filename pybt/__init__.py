@@ -10,6 +10,7 @@ streamlined developer experience.
 """
 
 from . import analytics, core, data, execution, portfolio, risk, strategies
+from .analytics import DetailedReporter, EquityCurveReporter
 from .core import (
     BacktestEngine,
     Bar,
@@ -42,6 +43,8 @@ __all__ = [
     "OrderSide",
     "OrderType",
     "Bar",
+    "EquityCurveReporter",
+    "DetailedReporter",
     "analytics",
     "core",
     "data",
