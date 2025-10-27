@@ -22,6 +22,7 @@ def synthetic_bars(symbol: str, start: datetime, periods: int) -> List[Bar]:
     for step in range(periods):
         timestamp = start + timedelta(days=step)
         price += (1 if step % 5 < 3 else -1) * 0.8
+        volume = 1_000 + step * 10
         bar = Bar(
             symbol=symbol,
             timestamp=timestamp,
@@ -29,7 +30,8 @@ def synthetic_bars(symbol: str, start: datetime, periods: int) -> List[Bar]:
             high=price + 0.6,
             low=price - 0.6,
             close=price,
-            volume=1_000 + step * 10,
+            volume=volume,
+            amount=price * volume,  # 成交额 = 价格 * 成交量
         )
         bars.append(bar)
     return bars

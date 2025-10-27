@@ -12,6 +12,19 @@
 python examples/simple_backtest.py
 ```
 
+### 1.5. amount_analysis_demo.py - 成交额分析示例
+展示如何使用 Bar 中的 `amount` 字段进行流动性过滤。
+
+**运行:**
+```bash
+python examples/amount_analysis_demo.py
+```
+
+**特点:**
+- 演示成交额字段的使用
+- 实现基于流动性的交易过滤
+- 避免在流动性不足时交易
+
 ### 2. detailed_report_demo.py - 详细报告示例
 展示 `DetailedReporter` 的功能，包括交易明细、最大回撤等详细指标。
 
@@ -73,10 +86,32 @@ python examples/adata_multi_stock.py
 - 计算每只股票的动量（过去 N 天的收益率）
 - 持有动量最高的股票，卖出其他股票
 
+## Bar 数据模型
+
+PyBT 使用 `Bar` 类表示 OHLCVA 数据：
+
+```python
+@dataclass(frozen=True)
+class Bar:
+    symbol: str      # 股票代码
+    timestamp: datetime  # 时间戳
+    open: float      # 开盘价
+    high: float      # 最高价
+    low: float       # 最低价
+    close: float     # 收盘价
+    volume: float    # 成交量
+    amount: float    # 成交额（新增）
+```
+
+**成交额的用途:**
+- 流动性分析：过滤成交额过低的股票
+- 资金流向：分析大单流入流出
+- 市场热度：判断市场活跃度
+
 ## 关于 adata
 
 [adata](https://github.com/1nchaos/adata) 是一个开源的 A 股数据获取工具，提供：
-- 股票日线/分钟线数据
+- 股票日线/分钟线数据（包含成交额）
 - 财务数据
 - 指数数据
 - 完全免费
@@ -90,6 +125,7 @@ df = adata.stock.market.get_market(
     start_date='2023-01-01',
     end_date='2023-12-31'
 )
+# df 包含: open, high, low, close, volume, amount 等字段
 ```
 
 ## 新功能：DetailedReporter

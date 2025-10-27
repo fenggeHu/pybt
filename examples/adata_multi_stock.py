@@ -80,6 +80,7 @@ def fetch_multiple_stocks(
                     low=float(row["low"]),
                     close=float(row["close"]),
                     volume=float(row["volume"]),
+                    amount=float(row.get("amount", 0.0)),  # 成交额，如果没有则为0
                 )
                 all_bars.append(bar)
 
