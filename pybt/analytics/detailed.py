@@ -29,7 +29,7 @@ class DetailedReporter(PerformanceReporter):
     """
 
     def __init__(
-        self, initial_cash: float = 100_000.0, track_equity_curve: bool = True
+            self, initial_cash: float = 100_000.0, track_equity_curve: bool = True
     ) -> None:
         super().__init__()
         self.initial_cash = initial_cash
@@ -77,7 +77,7 @@ class DetailedReporter(PerformanceReporter):
         if old_position != 0:
             # 如果是平仓或减仓，计算盈亏
             if (old_position > 0 and event.quantity < 0) or (
-                old_position < 0 and event.quantity > 0
+                    old_position < 0 and event.quantity > 0
             ):
                 closed_qty = min(abs(old_position), abs(event.quantity))
                 avg_cost = self._cost_basis[symbol]

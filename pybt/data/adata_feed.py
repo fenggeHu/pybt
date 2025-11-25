@@ -17,10 +17,10 @@ class ADataLiveFeed(DataFeed):
     """
 
     def __init__(
-        self,
-        symbol: str,
-        poll_interval: float = 1.0,
-        max_ticks: Optional[int] = None,
+            self,
+            symbol: str,
+            poll_interval: float = 1.0,
+            max_ticks: Optional[int] = None,
     ) -> None:
         super().__init__()
         if adata is None:

@@ -22,7 +22,6 @@ from pybt import (
     DetailedReporter,
     EngineConfig,
     MarketEvent,
-    OrderSide,
     SignalDirection,
     SignalEvent,
 )
@@ -34,9 +33,9 @@ from pybt.risk import MaxPositionRisk
 
 
 def fetch_multiple_stocks(
-    stock_codes: List[str],
-    start_date: str,
-    end_date: str,
+        stock_codes: List[str],
+        start_date: str,
+        end_date: str,
 ) -> List[Bar]:
     """
     获取多只股票的历史数据
@@ -71,7 +70,7 @@ def fetch_multiple_stocks(
                     timestamp = datetime.strptime(trade_date_str, "%Y-%m-%d")
                 else:
                     timestamp = datetime.strptime(trade_date_str, "%Y%m%d")
-                
+
                 bar = Bar(
                     symbol=stock_code,
                     timestamp=timestamp,
@@ -104,10 +103,10 @@ class MomentumRotationStrategy(Strategy):
     """
 
     def __init__(
-        self,
-        symbols: List[str],
-        lookback_days: int = 20,
-        rebalance_days: int = 20,
+            self,
+            symbols: List[str],
+            lookback_days: int = 20,
+            rebalance_days: int = 20,
     ) -> None:
         super().__init__()
         self.symbols = symbols
@@ -215,8 +214,8 @@ def main() -> None:
         "601166",  # 兴业银行
         "600000",  # 浦发银行
     ]
-    start_date = "2023-01-01"
-    end_date = "2023-12-31"
+    start_date = "2025-01-01"
+    end_date = "2025-12-31"
     initial_cash = 100_000.0
     lot_size = 100
     max_position = 1000
