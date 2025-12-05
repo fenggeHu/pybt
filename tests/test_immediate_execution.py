@@ -6,6 +6,7 @@ from pybt.core.enums import OrderSide, OrderType
 from pybt.core.event_bus import EventBus
 from pybt.core.events import FillEvent, MarketEvent, OrderEvent
 from pybt.execution.immediate import ImmediateExecutionHandler
+from pybt.errors import ExecutionError
 
 
 def test_immediate_execution_uses_cached_price_and_slippage() -> None:
@@ -39,7 +40,7 @@ def test_immediate_execution_requires_price() -> None:
     bus = EventBus()
     exec_handler = ImmediateExecutionHandler()
     exec_handler.bind(bus)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ExecutionError):
         exec_handler.on_order(
             OrderEvent(
                 timestamp=datetime(2024, 1, 1),

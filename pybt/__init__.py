@@ -11,6 +11,15 @@ streamlined developer experience.
 
 from . import analytics, core, data, execution, portfolio, risk, strategies
 from .analytics import DetailedReporter, EquityCurveReporter
+from .errors import (
+    ConfigurationError,
+    DataError,
+    ExecutionError,
+    FeedError,
+    PersistenceError,
+    PyBTError,
+    RiskError,
+)
 from .config import load_engine_from_json
 from .core import (
     BacktestEngine,
@@ -47,6 +56,13 @@ __all__ = [
     "Bar",
     "EquityCurveReporter",
     "DetailedReporter",
+    "PyBTError",
+    "ConfigurationError",
+    "DataError",
+    "ExecutionError",
+    "FeedError",
+    "PersistenceError",
+    "RiskError",
     "log_event",
     "load_engine_from_json",
     "configure_logging",

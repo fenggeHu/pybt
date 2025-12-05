@@ -27,4 +27,9 @@ jobs:
       - name: Type check (mypy)
         run: mypy pybt
       - name: Tests
-        run: pytest -q
+        run: pytest -q --cov=pybt --cov-report=term-missing
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+            name: coverage-${{ matrix.python-version }}
+            path: .coverage

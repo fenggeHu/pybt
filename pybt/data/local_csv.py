@@ -13,6 +13,7 @@ except ImportError:  # pragma: no cover - optional dependency
 from pybt.core.events import MarketEvent
 from pybt.core.interfaces import DataFeed
 from pybt.core.models import Bar
+from pybt.errors import DataError
 
 
 def _parse_timestamp(value: str) -> datetime:
@@ -107,7 +108,7 @@ def load_bars_from_parquet(
 def _validate_monotonic(bars: List[Bar], source: str) -> None:
     for i in range(1, len(bars)):
         if bars[i].timestamp < bars[i - 1].timestamp:
-            raise ValueError(f"Bars not sorted by timestamp in {source}")
+            raise DataError(f"Bars not sorted by timestamp in {source}")
 
 
 class LocalCSVBarFeed(DataFeed):

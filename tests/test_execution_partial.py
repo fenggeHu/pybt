@@ -1,9 +1,12 @@
 from datetime import datetime
 
+import pytest
+
 from pybt.core.enums import OrderSide, OrderType
 from pybt.core.event_bus import EventBus
 from pybt.core.events import FillEvent, MarketEvent, OrderEvent
 from pybt.execution.immediate import ImmediateExecutionHandler
+from pybt.errors import ExecutionError
 
 
 def test_immediate_execution_partial_fill_and_staleness_guard() -> None:
@@ -37,8 +40,5 @@ def test_immediate_execution_partial_fill_and_staleness_guard() -> None:
         order_type=OrderType.MARKET,
         direction=OrderSide.BUY,
     )
-    try:
+    with pytest.raises(ExecutionError):
         exec_handler.on_order(stale_order)
-    except RuntimeError as exc:
-        assert "Stale market data" in str(exc)
-

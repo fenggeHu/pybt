@@ -9,6 +9,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 from pybt.core.interfaces import DataFeed
 from pybt.core.models import Bar
+from pybt.errors import FeedError
 
 
 class ADataLiveFeed(DataFeed):
@@ -24,7 +25,7 @@ class ADataLiveFeed(DataFeed):
     ) -> None:
         super().__init__()
         if adata is None:
-            raise ImportError(
+            raise FeedError(
                 "ADataLiveFeed requires the 'adata' package. Install it via 'pip install adata'."
             )
         self.symbol = symbol
@@ -67,7 +68,7 @@ class ADataLiveFeed(DataFeed):
     def _fetch_quote(self) -> dict:
         df = adata.stock.market.list_market_current(code_list=[self.symbol])
         if df.empty:
-            raise RuntimeError(f"adata returned no data for {self.symbol}")
+            raise FeedError(f"adata returned no data for {self.symbol}")
         row = df.iloc[0]
         return {
             "price": float(row["price"]),

@@ -26,3 +26,32 @@ def test_rest_polling_feed_with_custom_fetcher() -> None:
     assert len(captured) == 2
     assert captured[0].fields["close"] == 10.0
     assert captured[1].fields["close"] == 10.5
+
+
+def test_rest_polling_feed_retries_and_raises() -> None:
+    attempts = 0
+
+    def flaky(_url: str) -> dict:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise RuntimeError("fail")
+        return {"price": 9.9}
+
+    feed = RESTPollingFeed(
+        symbol="AAA",
+        url="http://example.com",
+        poll_interval=0.0,
+        max_ticks=1,
+        fetcher=flaky,
+        max_retries=3,
+        backoff_seconds=0.0,
+    )
+    bus = EventBus()
+    feed.bind(bus)
+    captured: list[MarketEvent] = []
+    bus.subscribe(MarketEvent, captured.append)
+    feed.prime()
+    feed.next()
+    bus.dispatch()
+    assert captured[0].fields["close"] == 9.9

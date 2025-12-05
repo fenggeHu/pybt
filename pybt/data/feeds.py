@@ -3,6 +3,7 @@ from typing import Iterator, List, Sequence
 from pybt.core.events import MarketEvent
 from pybt.core.interfaces import DataFeed
 from pybt.core.models import Bar
+from pybt.errors import DataError
 
 
 class InMemoryBarFeed(DataFeed):
@@ -42,4 +43,4 @@ class InMemoryBarFeed(DataFeed):
     def _validate_monotonic(self) -> None:
         for i in range(1, len(self._bars)):
             if self._bars[i].timestamp < self._bars[i - 1].timestamp:
-                raise ValueError("Bars must be sorted by timestamp")
+                raise DataError("Bars must be sorted by timestamp")
