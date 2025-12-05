@@ -5,6 +5,7 @@ from typing import Dict
 from pybt.core.enums import OrderSide
 from pybt.core.events import FillEvent, MarketEvent, OrderEvent
 from pybt.core.interfaces import ExecutionHandler
+from pybt.errors import ExecutionError
 
 
 class ImmediateExecutionHandler(ExecutionHandler):
@@ -39,14 +40,16 @@ class ImmediateExecutionHandler(ExecutionHandler):
         self._timestamps[event.symbol] = event.timestamp
 
     def on_order(self, event: OrderEvent) -> None:
+        # OrderEvent is the consumer; cached MarketEvent prices are the supplier.
+        # Reject missing or stale data before filling to keep execution deterministic.
         last_price = self._prices.get(event.symbol)
         if last_price is None:
-            raise RuntimeError(f"No market data for symbol {event.symbol}")
+            raise ExecutionError(f"No market data for symbol {event.symbol}")
 
         if self.max_staleness is not None:
             last_ts = self._timestamps.get(event.symbol)
             if last_ts is None or (event.timestamp - last_ts).total_seconds() > self.max_staleness:
-                raise RuntimeError(f"Stale market data for symbol {event.symbol}")
+                raise ExecutionError(f"Stale market data for symbol {event.symbol}")
 
         is_buy = event.direction == OrderSide.BUY
         qty = event.quantity

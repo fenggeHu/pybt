@@ -7,8 +7,10 @@ ping/pong and reconnection handling.
 """
 
 import asyncio
+import json
+import time
 from datetime import datetime
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Callable, Optional
 
 try:
     import websockets  # type: ignore
@@ -17,6 +19,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 from pybt.core.interfaces import DataFeed
 from pybt.core.models import Bar
+from pybt.errors import FeedError
 
 
 class WebSocketJSONFeed(DataFeed):
@@ -27,16 +30,24 @@ class WebSocketJSONFeed(DataFeed):
         parser: Optional[Callable[[Any], dict]] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None,
         max_ticks: Optional[int] = None,
+        connect: Optional[Callable[[str], Any]] = None,
+        max_reconnects: int = 3,
+        backoff_seconds: float = 0.5,
+        heartbeat_interval: Optional[float] = None,
     ) -> None:
         super().__init__()
-        if websockets is None:
-            raise ImportError("websockets is required for WebSocketJSONFeed")
+        if websockets is None and connect is None:
+            raise FeedError("websockets is required for WebSocketJSONFeed")
         self.symbol = symbol
         self.url = url
         self.parser = parser or self._default_parser
         self.loop = loop or asyncio.get_event_loop()
         self.max_ticks = max_ticks
         self._ticks = 0
+        self.backoff_seconds = backoff_seconds
+        self.max_reconnects = max_reconnects
+        self._connect = connect or websockets.connect  # type: ignore[attr-defined]
+        self.heartbeat_interval = heartbeat_interval
 
     def prime(self) -> None:
         self._ticks = 0
@@ -51,32 +62,57 @@ class WebSocketJSONFeed(DataFeed):
         self.loop.run_until_complete(self._next_async())
 
     async def _next_async(self) -> None:
-        async with websockets.connect(self.url) as ws:  # type: ignore[attr-defined]
-            raw = await ws.recv()
-            payload = self.parser(raw)
-            price = payload["price"]
-            ts = datetime.utcnow()
-            bar = Bar(
-                symbol=self.symbol,
-                timestamp=ts,
-                open=price,
-                high=price,
-                low=price,
-                close=price,
-                volume=float(payload.get("volume", 0.0)),
-                amount=float(payload.get("amount", 0.0)),
-            )
-            self.bus.publish(bar.as_event())
-            self._ticks += 1
+        # WebSocket transport supplies raw payloads; this feed owns reconnect/backoff before publishing MarketEvent bars.
+        attempts = 0
+        while attempts <= self.max_reconnects:
+            try:
+                ws_ctx = self._connect(self.url)
+                if asyncio.iscoroutine(ws_ctx):
+                    ws_ctx = await ws_ctx
+                if hasattr(ws_ctx, "__aenter__"):
+                    async with ws_ctx as ws:  # type: ignore[misc]
+                        raw = await self._recv_with_heartbeat(ws)
+                else:
+                    ws = ws_ctx
+                    raw = await self._recv_with_heartbeat(ws)  # type: ignore[union-attr]
+
+                payload = self.parser(raw)
+                price = payload["price"]
+                ts = datetime.utcnow()
+                bar = Bar(
+                    symbol=self.symbol,
+                    timestamp=ts,
+                    open=price,
+                    high=price,
+                    low=price,
+                    close=price,
+                    volume=float(payload.get("volume", 0.0)),
+                    amount=float(payload.get("amount", 0.0)),
+                )
+                self.bus.publish(bar.as_event())
+                self._ticks += 1
+                return
+            except Exception as exc:
+                attempts += 1
+                if attempts > self.max_reconnects:
+                    raise FeedError(f"WebSocket connection failed after {self.max_reconnects} attempts") from exc
+                delay = self.backoff_seconds * (2 ** (attempts - 1))
+                time.sleep(delay)
 
     @staticmethod
     def _default_parser(raw: Any) -> dict:
-        import json
-
         payload = json.loads(raw)
         if "price" not in payload:
-            raise RuntimeError("WebSocket payload missing 'price'")
+            raise FeedError("WebSocket payload missing 'price'")
         return payload
+
+    async def _recv_with_heartbeat(self, ws: Any) -> Any:
+        if self.heartbeat_interval is not None and hasattr(ws, "ping"):
+            try:
+                ws.ping()
+            except Exception:
+                pass
+        return await ws.recv()
 
 
 __all__ = ["WebSocketJSONFeed"]

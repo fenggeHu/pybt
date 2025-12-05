@@ -1,24 +1,11 @@
-"""Config-driven engine builder with lightweight validation.
-
-JSON schema (example):
-
-{
-  "name": "demo",
-  "data_feed": {"type": "local_csv", "path": "./data/AAA/Bar.csv", "symbol": "AAA"},
-  "strategies": [{"type": "moving_average", "symbol": "AAA", "short_window": 5, "long_window": 20}],
-  "portfolio": {"type": "naive", "lot_size": 100, "initial_cash": 100000},
-  "execution": {"type": "immediate", "slippage": 0.01, "commission": 1.0},
-  "risk": [{"type": "max_position", "limit": 500}],
-  "reporters": [{"type": "equity", "initial_cash": 100000}]
-}
-"""
+"""Config-driven engine builder with lightweight validation."""
 
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
-from pybt.analytics import DetailedReporter, EquityCurveReporter
+from pybt.analytics import DetailedReporter, EquityCurveReporter, TradeLogReporter
 from pybt.core.engine import BacktestEngine, EngineConfig
 from pybt.core.interfaces import DataFeed, PerformanceReporter, RiskManager, Strategy
 from pybt.data import InMemoryBarFeed, LocalCSVBarFeed, RESTPollingFeed, WebSocketJSONFeed, load_bars_from_csv
@@ -45,6 +32,7 @@ def _parse_dt(value: Optional[str]) -> Optional[datetime]:
 
 
 def _build_feed(cfg: Mapping[str, Any]) -> DataFeed:
+    # User config is the supplier; this resolver owns validation and returns a concrete feed.
     feed_type = _require(cfg, "type")
     if feed_type in {"local_csv", "local_file"}:
         path = Path(_require(cfg, "path"))
@@ -91,6 +79,7 @@ def _build_feed(cfg: Mapping[str, Any]) -> DataFeed:
 
 
 def _build_strategy(cfg: Mapping[str, Any]) -> Strategy:
+    # Strategies are constructed from user-supplied settings; invalid types fail fast.
     strat_type = _require(cfg, "type")
     if strat_type == "moving_average":
         return MovingAverageCrossStrategy(
@@ -153,13 +142,26 @@ def _build_reporters(cfgs: Optional[Sequence[Mapping[str, Any]]]) -> list[Perfor
                     track_equity_curve=bool(cfg.get("track_equity_curve", True)),
                 )
             )
+        elif rep_type == "tradelog":
+            jsonl = cfg.get("jsonl_path")
+            sqlite = cfg.get("sqlite_path")
+            reporters.append(
+                TradeLogReporter(
+                    jsonl_path=Path(jsonl) if jsonl else None,
+                    sqlite_path=Path(sqlite) if sqlite else None,
+                )
+            )
         else:
             raise ValueError(f"Unsupported reporter type: {rep_type}")
     return reporters
 
 
 def load_engine_from_json(path: Path | str) -> BacktestEngine:
-    """Load BacktestEngine from a JSON config file with validation."""
+    """Load BacktestEngine from a JSON config file with validation.
+
+    The config file is the supplier; this builder owns validation and wiring,
+    returning an engine that owns the lifecycle of all constructed components.
+    """
 
     cfg_path = Path(path)
     raw = json.loads(cfg_path.read_text(encoding="utf-8"))

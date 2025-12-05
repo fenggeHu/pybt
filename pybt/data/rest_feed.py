@@ -16,6 +16,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 from pybt.core.interfaces import DataFeed
 from pybt.core.models import Bar
+from pybt.errors import FeedError
 
 
 class RESTPollingFeed(DataFeed):
@@ -26,10 +27,12 @@ class RESTPollingFeed(DataFeed):
         poll_interval: float = 1.0,
         max_ticks: Optional[int] = None,
         fetcher: Optional[Callable[[str], dict]] = None,
+        max_retries: int = 3,
+        backoff_seconds: float = 0.5,
     ) -> None:
         super().__init__()
         if requests is None and fetcher is None:
-            raise ImportError("RESTPollingFeed requires requests or a custom fetcher")
+            raise FeedError("RESTPollingFeed requires requests or a custom fetcher")
         self.symbol = symbol
         self.url = url
         self.poll_interval = poll_interval
@@ -37,6 +40,9 @@ class RESTPollingFeed(DataFeed):
         self._ticks = 0
         self._last_price: Optional[float] = None
         self._fetcher = fetcher
+        self.max_retries = max_retries
+        self.backoff_seconds = backoff_seconds
+        self._sleep = time.sleep
 
     def prime(self) -> None:
         self._ticks = 0
@@ -48,7 +54,8 @@ class RESTPollingFeed(DataFeed):
         return self._ticks < self.max_ticks
 
     def next(self) -> None:
-        quote = self._fetch_quote()
+        # Fetcher supplies quotes; this feed owns retry/backoff and emits MarketEvent bars.
+        quote = self._retry_fetch()
         price = quote["price"]
         ts = datetime.utcnow()
         last = self._last_price or price
@@ -67,7 +74,7 @@ class RESTPollingFeed(DataFeed):
         self._last_price = price
         self._ticks += 1
         self.bus.publish(bar.as_event())
-        time.sleep(self.poll_interval)
+        self._sleep(self.poll_interval)
 
     def _fetch_quote(self) -> dict:
         if self._fetcher is not None:
@@ -76,8 +83,24 @@ class RESTPollingFeed(DataFeed):
         resp.raise_for_status()
         data = resp.json()
         if "price" not in data:
-            raise RuntimeError("REST response missing 'price'")
+            raise FeedError("REST response missing 'price'")
         return data
+
+    def _retry_fetch(self) -> dict:
+        attempts = 0
+        last_exc: Exception | None = None
+        # Exponential backoff protects downstream consumers from tight retry loops.
+        while attempts <= self.max_retries:
+            try:
+                return self._fetch_quote()
+            except Exception as exc:  # pragma: no cover - errors are tested separately
+                last_exc = exc
+                if attempts == self.max_retries:
+                    break
+                delay = self.backoff_seconds * (2 ** attempts)
+                self._sleep(delay)
+                attempts += 1
+        raise FeedError(f"Failed to fetch REST quote after {self.max_retries + 1} attempts") from last_exc
 
 
 __all__ = ["RESTPollingFeed"]
