@@ -62,6 +62,7 @@ def load_bars_from_csv(
                 )
             )
     bars.sort(key=lambda b: b.timestamp)
+    _validate_monotonic(bars, source=str(path))
     return bars
 
 
@@ -99,7 +100,14 @@ def load_bars_from_parquet(
         for _, row in df.iterrows()
     ]
     bars.sort(key=lambda b: b.timestamp)
+    _validate_monotonic(bars, source=str(path))
     return bars
+
+
+def _validate_monotonic(bars: List[Bar], source: str) -> None:
+    for i in range(1, len(bars)):
+        if bars[i].timestamp < bars[i - 1].timestamp:
+            raise ValueError(f"Bars not sorted by timestamp in {source}")
 
 
 class LocalCSVBarFeed(DataFeed):

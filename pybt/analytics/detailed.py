@@ -91,16 +91,18 @@ class DetailedReporter(PerformanceReporter):
         self._cash += cash_flow
         self._last_timestamp = event.timestamp
 
-        # 更新成本基础
-        if self._positions[symbol] == 0:
+        # 更新成本基础：区分平仓、同向加仓和反转后的建仓
+        new_position = self._positions[symbol]
+        if new_position == 0:
             self._cost_basis[symbol] = 0.0
-        elif abs(self._positions[symbol]) > abs(old_position):
-            # 加仓，更新平均成本
+        elif (new_position > 0 > old_position) or (new_position < 0 < old_position):
+            # 方向反转后，剩余头寸全部来自当前成交
+            self._cost_basis[symbol] = event.fill_price
+        elif abs(new_position) > abs(old_position) and (new_position > 0) == (old_position > 0):
+            # 同向加仓，更新加权成本
             old_cost = self._cost_basis[symbol] * abs(old_position)
             new_cost = event.fill_price * abs(event.quantity)
-            self._cost_basis[symbol] = (old_cost + new_cost) / abs(
-                self._positions[symbol]
-            )
+            self._cost_basis[symbol] = (old_cost + new_cost) / abs(new_position)
 
         # 计算当前权益
         equity = self._equity()

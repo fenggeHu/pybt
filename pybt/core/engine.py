@@ -1,5 +1,7 @@
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, field
 from datetime import datetime
+from uuid import uuid4
 from typing import Iterable, List, Optional, Sequence
 
 from .event_bus import EventBus
@@ -13,6 +15,7 @@ from .interfaces import (
     RiskManager,
     Strategy,
 )
+from pybt.logging import log_event
 
 
 @dataclass
@@ -24,6 +27,7 @@ class EngineConfig:
     name: str = "backtest"
     start: Optional[datetime] = None
     end: Optional[datetime] = None
+    run_id: str = field(default_factory=lambda: uuid4().hex[:8])
 
 
 class BacktestEngine:
@@ -51,6 +55,7 @@ class BacktestEngine:
         self.bus = bus or EventBus()
         self.config = config or EngineConfig()
         self._running: bool = False
+        self._logger = logging.getLogger(__name__)
 
         self._bind_components()
         self._register_routes()
@@ -80,7 +85,9 @@ class BacktestEngine:
             raise RuntimeError("BacktestEngine is already running.")
 
         self._running = True
+        cycle = 0
         try:
+            self._logger.info("Starting backtest '%s' run_id=%s", self.config.name, self.config.run_id)
             for component in self._components:
                 component.on_start()
 
@@ -90,19 +97,29 @@ class BacktestEngine:
                 self.data_feed.next()
                 self.bus.dispatch()
                 self._emit_metrics()
+                cycle += 1
         finally:
             for component in self._components:
                 component.on_stop()
             self._running = False
+            self._logger.info(
+                "Backtest '%s' completed (cycles=%d, run_id=%s)", self.config.name, cycle, self.config.run_id
+            )
 
     def _route_market(self, event: MarketEvent) -> None:
+        self._logger.debug("MarketEvent %s", event)
+        log_event(self._logger, event, level="DEBUG")
         for strategy in self.strategies:
             strategy.on_market(event)
 
     def _route_signal(self, event: SignalEvent) -> None:
+        self._logger.debug("SignalEvent %s", event)
+        log_event(self._logger, event, level="DEBUG")
         self.portfolio.on_signal(event)
 
     def _route_order(self, event: OrderEvent) -> None:
+        self._logger.debug("OrderEvent %s", event)
+        log_event(self._logger, event, level="DEBUG")
         order: Optional[OrderEvent] = event
         for risk in self.risk_managers:
             if order is None:
@@ -113,6 +130,8 @@ class BacktestEngine:
         self.execution.on_order(order)
 
     def _route_fill(self, event: FillEvent) -> None:
+        self._logger.debug("FillEvent %s", event)
+        log_event(self._logger, event, level="DEBUG")
         self.portfolio.on_fill(event)
         for reporter in self.reporters:
             reporter.on_fill(event)

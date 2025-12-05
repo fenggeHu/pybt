@@ -11,6 +11,7 @@ streamlined developer experience.
 
 from . import analytics, core, data, execution, portfolio, risk, strategies
 from .analytics import DetailedReporter, EquityCurveReporter
+from .config import load_engine_from_json
 from .core import (
     BacktestEngine,
     Bar,
@@ -27,6 +28,7 @@ from .core import (
     SignalDirection,
     SignalEvent,
 )
+from .logging import configure_logging, log_event
 
 __all__ = [
     "BacktestEngine",
@@ -45,6 +47,9 @@ __all__ = [
     "Bar",
     "EquityCurveReporter",
     "DetailedReporter",
+    "log_event",
+    "load_engine_from_json",
+    "configure_logging",
     "analytics",
     "core",
     "data",

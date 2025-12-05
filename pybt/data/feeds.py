@@ -13,6 +13,7 @@ class InMemoryBarFeed(DataFeed):
     def __init__(self, bars: Sequence[Bar]) -> None:
         super().__init__()
         self._bars: List[Bar] = sorted(bars, key=lambda bar: bar.timestamp)
+        self._validate_monotonic()
         self._iterator: Iterator[Bar] | None = None
         self._buffer: List[MarketEvent] = []
 
@@ -37,3 +38,8 @@ class InMemoryBarFeed(DataFeed):
             return
         event = self._buffer.pop(0)
         self.bus.publish(event)
+
+    def _validate_monotonic(self) -> None:
+        for i in range(1, len(self._bars)):
+            if self._bars[i].timestamp < self._bars[i - 1].timestamp:
+                raise ValueError("Bars must be sorted by timestamp")
