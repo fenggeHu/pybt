@@ -28,6 +28,12 @@ export const useAuthStore = defineStore("auth", () => {
     user.value = res.user;
   };
 
+  const register = async (username: string, password: string) => {
+    const res = await api.register({ username, password });
+    setToken(res.access_token);
+    user.value = res.user;
+  };
+
   const fetchMe = async () => {
     if (!token.value) return;
     try {
@@ -43,5 +49,5 @@ export const useAuthStore = defineStore("auth", () => {
     user.value = null;
   };
 
-  return { token, user, login, fetchMe, logout };
+  return { token, user, login, register, fetchMe, logout };
 });

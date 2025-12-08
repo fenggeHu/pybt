@@ -1,6 +1,6 @@
 <template>
   <div class="login-container">
-    <h2>{{ $t("login") }}</h2>
+    <h2>{{ isRegister ? $t("register") : $t("login") }}</h2>
     <NInput
       v-model:value="username"
       :placeholder="$t('username')"
@@ -22,6 +22,18 @@
         <span style="color: var(--muted);">🔒</span>
       </template>
     </NInput>
+    <NInput
+      v-if="isRegister"
+      v-model:value="confirmPassword"
+      type="password"
+      :placeholder="$t('confirmPassword')"
+      size="large"
+      show-password-on="click"
+    >
+      <template #prefix>
+        <span style="color: var(--muted);">✅</span>
+      </template>
+    </NInput>
     <NButton
       type="primary"
       size="large"
@@ -29,39 +41,69 @@
       :loading="loading"
       @click="onSubmit"
     >
-      {{ $t("login") }}
+      {{ isRegister ? $t("register") : $t("login") }}
     </NButton>
+    <div class="small auth-switch">
+      <template v-if="isRegister">
+        <span>{{ $t("haveAccount") }}</span>
+        <a href="#" @click.prevent="switchMode('login')">{{ $t("goLogin") }}</a>
+      </template>
+      <template v-else>
+        <span>{{ $t("noAccount") }}</span>
+        <a href="#" @click.prevent="switchMode('register')">{{ $t("goRegister") }}</a>
+      </template>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useMessage, NButton, NInput } from "naive-ui";
 import { useAuthStore } from "../stores/auth";
 
 const username = ref("");
 const password = ref("");
+const confirmPassword = ref("");
+const mode = ref<"login" | "register">("login");
 const loading = ref(false);
 const msg = useMessage();
 const auth = useAuthStore();
 const router = useRouter();
 const route = useRoute();
 
+const isRegister = computed(() => mode.value === "register");
+
+const switchMode = (nextMode: "login" | "register") => {
+  mode.value = nextMode;
+  loading.value = false;
+  confirmPassword.value = "";
+};
+
 const onSubmit = async () => {
-  if (!username.value || !password.value) {
-    msg.error("请输入用户名和密码");
+  if (!username.value || !password.value || (isRegister.value && !confirmPassword.value)) {
+    msg.error(isRegister.value ? "请填写完整的注册信息" : "请输入用户名和密码");
+    return;
+  }
+  if (isRegister.value && password.value !== confirmPassword.value) {
+    msg.error("两次输入的密码不一致");
     return;
   }
   loading.value = true;
   try {
-    await auth.login(username.value, password.value);
+    if (isRegister.value) {
+      await auth.register(username.value, password.value);
+      msg.success("注册成功，已自动登录");
+    } else {
+      await auth.login(username.value, password.value);
+      msg.success("登录成功");
+    }
     await auth.fetchMe();
-    msg.success("登录成功");
     const redirect = (route.query.redirect as string) || "/";
     router.replace(redirect);
   } catch (err: any) {
-    msg.error(err?.response?.data?.detail || "登录失败");
+    const fallback = isRegister.value ? "注册失败" : "登录失败";
+    msg.error(err?.response?.data?.detail || fallback);
   } finally {
     loading.value = false;
   }

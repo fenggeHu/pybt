@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -7,9 +9,15 @@ from .api import audit, auth, configs, data_sources, definitions, health, runs
 def create_app() -> FastAPI:
     app = FastAPI(title="PyBT Web API", version="0.1.0")
 
+    # 开发环境使用正则匹配本地地址，生产环境使用环境变量配置
+    cors_origins = os.environ.get("CORS_ORIGINS", "").split(",") if os.environ.get("CORS_ORIGINS") else []
+    # 匹配 localhost 和 127.0.0.1 的任意端口
+    cors_origin_regex = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=cors_origins,
+        allow_origin_regex=cors_origin_regex,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

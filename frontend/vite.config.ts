@@ -7,7 +7,7 @@ const devCsp = [
   "script-src 'self' 'unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
   // allow backend API and Vite HMR websocket
-  "connect-src 'self' http://127.0.0.1:8000 http://localhost:8000 ws://127.0.0.1:5173 ws://localhost:5173",
+  "connect-src 'self' http://127.0.0.1:8000 http://localhost:8000 http://127.0.0.1:8000/api http://localhost:8000/api ws://127.0.0.1:5173 ws://localhost:5173",
   "img-src 'self' data:",
   "object-src 'none'",
 ].join("; ");

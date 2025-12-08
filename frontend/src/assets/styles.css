@@ -95,6 +95,13 @@ a:hover {
   color: var(--text);
 }
 
+.auth-switch {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
 /* 表格样式增强 */
 .n-data-table {
   border-radius: 8px;
