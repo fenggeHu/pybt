@@ -8,18 +8,18 @@ from fastapi.responses import StreamingResponse
 from ..models import Run, RunCreate, RunStatus
 from ..models import User
 from ..services import enqueue_run, store
-from ..services.auth import decode_token, get_current_user
+from ..services.auth import decode_token, require_permission
 
 router = APIRouter(tags=["runs"])
 
 
 @router.get("/runs", response_model=list[Run])
-async def list_runs(user: User = Depends(get_current_user)) -> list[Run]:
+async def list_runs(user: User = Depends(require_permission("runs.read"))) -> list[Run]:
     return list(store.runs.values())
 
 
 @router.get("/runs/{run_id}", response_model=Run)
-async def get_run(run_id: str, user: User = Depends(get_current_user)) -> Run:
+async def get_run(run_id: str, user: User = Depends(require_permission("runs.read"))) -> Run:
     run = store.runs.get(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="run not found")
@@ -27,7 +27,9 @@ async def get_run(run_id: str, user: User = Depends(get_current_user)) -> Run:
 
 
 @router.post("/runs", response_model=Run)
-async def create_run(payload: RunCreate, tasks: BackgroundTasks, user: User = Depends(get_current_user)) -> Run:
+async def create_run(
+    payload: RunCreate, tasks: BackgroundTasks, user: User = Depends(require_permission("runs.write"))
+) -> Run:
     config = payload.config
     if payload.config_id:
         cfg = store.configs.get(payload.config_id)
@@ -44,7 +46,7 @@ async def create_run(payload: RunCreate, tasks: BackgroundTasks, user: User = De
 
 
 @router.post("/runs/{run_id}/cancel", response_model=Run)
-async def cancel_run(run_id: str, user: User = Depends(get_current_user)) -> Run:
+async def cancel_run(run_id: str, user: User = Depends(require_permission("runs.write"))) -> Run:
     run = store.runs.get(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="run not found")
@@ -71,13 +73,16 @@ async def _sse_stream(run_id: str) -> AsyncIterator[bytes]:
 async def stream_run(run_id: str, request: Request) -> StreamingResponse:
     # Allow token via Authorization header or query param token= for EventSource
     header = request.headers.get("authorization")
+    user = None
     if header and header.lower().startswith("bearer "):
-        decode_token(header.split(" ", 1)[1])
+        user = decode_token(header.split(" ", 1)[1])
     else:
         token = request.query_params.get("token")
         if not token:
             raise HTTPException(status_code=401, detail="auth required")
-        decode_token(token)
+        user = decode_token(token)
+    if not user or "runs.read" not in user.permissions:
+        raise HTTPException(status_code=403, detail="insufficient permissions")
     return StreamingResponse(_sse_stream(run_id), media_type="text/event-stream")
 
 
@@ -90,7 +95,10 @@ async def ws_run(websocket: WebSocket, run_id: str) -> None:
     try:
         from ..services.auth import decode_token
 
-        decode_token(token)
+        user = decode_token(token)
+        if not user or "runs.read" not in user.permissions:
+            await websocket.close(code=4403)
+            return
     except Exception:
         await websocket.close(code=4401)
         return

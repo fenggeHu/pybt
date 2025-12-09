@@ -3,11 +3,16 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import audit, auth, configs, data_sources, definitions, health, runs
+from .api import audit, auth, configs, data_sources, definitions, health, runs, users
+from .services import init_db, rbac_service
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="PyBT Web API", version="0.1.0")
+
+    # Initialize database and default RBAC records
+    init_db()
+    rbac_service.ensure_seed_data()
 
     # 开发环境使用正则匹配本地地址，生产环境使用环境变量配置
     cors_origins = os.environ.get("CORS_ORIGINS", "").split(",") if os.environ.get("CORS_ORIGINS") else []
@@ -31,6 +36,7 @@ def create_app() -> FastAPI:
         configs.router,
         audit.router,
         runs.router,
+        users.router,
     ]
     for router in routers:
         app.include_router(router, prefix="/api")

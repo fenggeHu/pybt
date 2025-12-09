@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from ..models import ConfigTemplate, ValidationResult, User
 from ..services import store, validate_config_payload
-from ..services.auth import get_current_user
+from ..services.auth import require_permission
 
 router = APIRouter(tags=["configs"])
 
@@ -27,19 +27,19 @@ class ConfigValidationRequest(BaseModel):
 
 
 @router.get("/configs", response_model=list[ConfigTemplate])
-async def list_configs(user: User = Depends(get_current_user)) -> list[ConfigTemplate]:
+async def list_configs(user: User = Depends(require_permission("configs.read"))) -> list[ConfigTemplate]:
     return list(store.configs.values())
 
 
 @router.post("/configs", response_model=ConfigTemplate)
-async def create_config(payload: ConfigCreate, user: User = Depends(get_current_user)) -> ConfigTemplate:
+async def create_config(payload: ConfigCreate, user: User = Depends(require_permission("configs.write"))) -> ConfigTemplate:
     cfg = store.create_config(name=payload.name, description=payload.description, config=payload.config)
     store.add_audit(actor=user.username, action="create_config", target=cfg.id)
     return cfg
 
 
 @router.get("/configs/{config_id}", response_model=ConfigTemplate)
-async def get_config(config_id: str, user: User = Depends(get_current_user)) -> ConfigTemplate:
+async def get_config(config_id: str, user: User = Depends(require_permission("configs.read"))) -> ConfigTemplate:
     cfg = store.configs.get(config_id)
     if not cfg:
         raise HTTPException(status_code=404, detail="config not found")
@@ -47,7 +47,9 @@ async def get_config(config_id: str, user: User = Depends(get_current_user)) -> 
 
 
 @router.put("/configs/{config_id}", response_model=ConfigTemplate)
-async def update_config(config_id: str, payload: ConfigUpdate, user: User = Depends(get_current_user)) -> ConfigTemplate:
+async def update_config(
+    config_id: str, payload: ConfigUpdate, user: User = Depends(require_permission("configs.write"))
+) -> ConfigTemplate:
     try:
         update_payload = payload.model_dump(exclude_none=True)
         cfg = store.update_config(config_id, update_payload)
@@ -58,14 +60,14 @@ async def update_config(config_id: str, payload: ConfigUpdate, user: User = Depe
 
 
 @router.delete("/configs/{config_id}")
-async def delete_config(config_id: str, user: User = Depends(get_current_user)) -> dict[str, str]:
+async def delete_config(config_id: str, user: User = Depends(require_permission("configs.write"))) -> dict[str, str]:
     store.delete_config(config_id)
     store.add_audit(actor=user.username, action="delete_config", target=config_id)
     return {"status": "deleted"}
 
 
 @router.post("/configs/{config_id}/clone", response_model=ConfigTemplate)
-async def clone_config(config_id: str, user: User = Depends(get_current_user)) -> ConfigTemplate:
+async def clone_config(config_id: str, user: User = Depends(require_permission("configs.write"))) -> ConfigTemplate:
     cfg = store.configs.get(config_id)
     if not cfg:
         raise HTTPException(status_code=404, detail="config not found")
@@ -79,5 +81,7 @@ async def clone_config(config_id: str, user: User = Depends(get_current_user)) -
 
 
 @router.post("/configs/validate", response_model=ValidationResult)
-async def validate_config(payload: ConfigValidationRequest, user: User = Depends(get_current_user)) -> ValidationResult:
+async def validate_config(
+    payload: ConfigValidationRequest, user: User = Depends(require_permission("configs.read"))
+) -> ValidationResult:
     return validate_config_payload(payload.config)

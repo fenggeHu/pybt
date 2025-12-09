@@ -7,9 +7,11 @@ from .schemas import (
     DataSource,
     DefinitionItem,
     DefinitionParam,
+    Permission,
     Run,
     RunCreate,
     RunStatus,
+    Role,
     User,
     ValidationResult,
 )
@@ -21,9 +23,11 @@ __all__ = [
     "DataSource",
     "DefinitionItem",
     "DefinitionParam",
+    "Permission",
     "Run",
     "RunCreate",
     "RunStatus",
+    "Role",
     "User",
     "ValidationResult",
 ]

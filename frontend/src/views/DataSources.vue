@@ -10,13 +10,13 @@
     <NDataTable :columns="columns" :data="dataSources" :loading="loading" :empty="emptyRender" />
   </div>
 
-  <NModal v-model:show="showCreate" preset="card" title="新建数据源" style="width: 640px;">
+  <NModal v-model:show="showCreate" preset="card" :title="$t('newDataSource')" style="width: 640px;">
     <NSpace vertical>
-      <NInput v-model:value="form.name" placeholder="名称（必填）" />
-      <NInput v-model:value="form.type" placeholder="类型 local_csv/rest/websocket/adata（必填）" />
-      <NInput v-model:value="form.path" placeholder="路径/URL (可选)" />
-      <NInput v-model:value="form.symbol" placeholder="符号 (可选)" />
-      <NInput v-model:value="form.description" placeholder="描述 (可选)" />
+      <NInput v-model:value="form.name" :placeholder="$t('nameRequired')" />
+      <NInput v-model:value="form.type" :placeholder="$t('typeRequiredPlaceholder')" />
+      <NInput v-model:value="form.path" :placeholder="$t('pathOptional')" />
+      <NInput v-model:value="form.symbol" :placeholder="$t('symbolOptional')" />
+      <NInput v-model:value="form.description" :placeholder="$t('descriptionOptional')" />
       <div v-if="formError" style="color: red;">{{ formError }}</div>
       <NButton type="primary" :loading="saving" @click="saveDataSource">{{ $t('save') }}</NButton>
     </NSpace>
@@ -24,9 +24,10 @@
 </template>
 
 <script setup lang="ts">
-import { h, onMounted, ref } from "vue";
+import { computed, h, onMounted, ref } from "vue";
 import { NButton, NButtonGroup, NDataTable, NInput, NModal, NSpace, NTag, useMessage, NEmpty } from "naive-ui";
 import { api } from "../modules/api";
+import { useI18n } from "vue-i18n";
 
 const msg = useMessage();
 const dataSources = ref<any[]>([]);
@@ -34,6 +35,7 @@ const loading = ref(false);
 const showCreate = ref(false);
 const saving = ref(false);
 const formError = ref<string | null>(null);
+const { t } = useI18n();
 
 const form = ref({
   name: "",
@@ -43,14 +45,14 @@ const form = ref({
   description: "",
 });
 
-const emptyRender = () => h(NEmpty, { description: "暂无数据源" });
+const emptyRender = () => h(NEmpty, { description: t("empty") });
 
 const loadDataSources = async () => {
   loading.value = true;
   try {
     dataSources.value = await api.dataSources();
   } catch {
-    msg.error("加载失败");
+    msg.error(t("loadFailed"));
   } finally {
     loading.value = false;
   }
@@ -59,21 +61,21 @@ const loadDataSources = async () => {
 const saveDataSource = async () => {
   formError.value = null;
   if (!form.value.name) {
-    formError.value = "名称必填";
+    formError.value = t("nameRequiredError");
     return;
   }
   if (!form.value.type) {
-    formError.value = "类型必填";
+    formError.value = t("typeRequiredError");
     return;
   }
   saving.value = true;
   try {
     await api.createDataSource(form.value);
-    msg.success("已创建");
+    msg.success(t("createSuccess"));
     showCreate.value = false;
     await loadDataSources();
   } catch (err: any) {
-    msg.error(err?.response?.data?.detail || "保存失败");
+    msg.error(err?.response?.data?.detail || t("saveFailed"));
   } finally {
     saving.value = false;
   }
@@ -81,23 +83,26 @@ const saveDataSource = async () => {
 
 const handleProbe = async (row: any) => {
   const res = await api.probeDataSource(row.id);
-  msg.success(`探测结果: ${res.healthy ? "正常" : "异常"}`);
+  const result = res.healthy ? t("healthyStatusNormal") : t("healthyStatusAbnormal");
+  msg.success(t("probeResult", { result }));
   await loadDataSources();
 };
 
-const columns = [
-  { title: "名称", key: "name" },
-  { title: "类型", key: "type" },
-  { title: "路径", key: "path" },
+const columns = computed(() => [
+  { title: t("name"), key: "name" },
+  { title: t("type"), key: "type" },
+  { title: t("path"), key: "path" },
   {
-    title: "健康",
+    title: t("healthy"),
     key: "healthy",
     render(row: any) {
-      return row.healthy === null || row.healthy === undefined ? "未知" : h(NTag, { type: row.healthy ? "success" : "error", size: "small" }, { default: () => (row.healthy ? "健康" : "异常") });
+      return row.healthy === null || row.healthy === undefined
+        ? t("healthyStatusUnknown")
+        : h(NTag, { type: row.healthy ? "success" : "error", size: "small" }, { default: () => (row.healthy ? t("healthyStatusNormal") : t("healthyStatusAbnormal")) });
     },
   },
   {
-    title: "操作",
+    title: t("actions"),
     key: "actions",
     render(row: any) {
       return h(
@@ -108,14 +113,14 @@ const columns = [
             h(
               NButton,
               { size: "small", onClick: () => handleProbe(row) },
-              { default: () => "探测" },
+              { default: () => t("probe") },
             ),
           ],
         },
       );
     },
   },
-];
+]);
 
 onMounted(loadDataSources);
 

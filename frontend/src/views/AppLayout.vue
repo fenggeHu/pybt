@@ -14,7 +14,7 @@
           <NSelect style="width: 120px;" size="small" v-model:value="ui.language" :options="langOptions" />
           <NSelect style="width: 140px;" size="small" v-model:value="ui.theme" :options="themeOptions" />
           <NDropdown :options="userOptions" trigger="hover" @select="handleUser">
-            <NButton quaternary>{{ auth.user?.username || "user" }}</NButton>
+            <NButton quaternary>{{ auth.user?.username || $t("user") }}</NButton>
           </NDropdown>
         </div>
       </NLayoutHeader>
@@ -37,39 +37,39 @@ const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const ui = useUiStore();
-const { locale } = useI18n();
+const { t, locale } = useI18n();
 
-const menuOptions = [
-  { label: "概览", key: "overview", path: "/" },
-  { label: "配置", key: "configs", path: "/configs" },
-  { label: "数据源", key: "data-sources", path: "/data-sources" },
-  { label: "任务", key: "runs", path: "/runs" },
-  { label: "组件", key: "definitions", path: "/definitions" },
-  { label: "审计", key: "audit", path: "/audit" },
-  { label: "设置", key: "settings", path: "/settings" },
-];
+const menuOptions = computed(() => [
+  { label: t("overview"), key: "overview", path: "/" },
+  { label: t("configs"), key: "configs", path: "/configs" },
+  { label: t("dataSources"), key: "data-sources", path: "/data-sources" },
+  { label: t("runs"), key: "runs", path: "/runs" },
+  { label: t("definitions"), key: "definitions", path: "/definitions" },
+  { label: t("audit"), key: "audit", path: "/audit" },
+  { label: t("settings"), key: "settings", path: "/settings" },
+]);
 
 const active = computed(() => (route.name as string) || "overview");
 
 const handleMenu = (key: string) => {
-  const item = menuOptions.find((m) => m.key === key);
+  const item = menuOptions.value.find((m) => m.key === key);
   if (item?.path) router.push(item.path);
 };
 
-const langOptions = [
-  { label: "中文", value: "zh" },
-  { label: "English", value: "en" },
-];
+const langOptions = computed(() => [
+  { label: t("langZh"), value: "zh" },
+  { label: t("langEn"), value: "en" },
+]);
 
-const themeOptions = [
-  { label: "跟随系统", value: "system" },
-  { label: "亮色", value: "light" },
-  { label: "暗色", value: "dark" },
-];
+const themeOptions = computed(() => [
+  { label: t("system"), value: "system" },
+  { label: t("light"), value: "light" },
+  { label: t("dark"), value: "dark" },
+]);
 
-const userOptions = [
-  { label: "退出登录", key: "logout" },
-];
+const userOptions = computed(() => [
+  { label: t("logout"), key: "logout" },
+]);
 
 const handleUser = (key: string) => {
   if (key === "logout") {

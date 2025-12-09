@@ -67,9 +67,23 @@ class DefinitionItem(BaseModel):
     params: list[DefinitionParam] = []
 
 
+class Permission(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class Role(BaseModel):
+    name: str
+    description: Optional[str] = None
+    permissions: list[str] = Field(default_factory=list)
+
+
 class User(BaseModel):
     username: str
-    role: str = "admin"
+    role: str = "user"
+    roles: list[str] = Field(default_factory=list)
+    permissions: list[str] = Field(default_factory=list)
+    active: bool = True
 
 
 class AuthToken(BaseModel):

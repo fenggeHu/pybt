@@ -10,11 +10,11 @@
     <NDataTable :columns="columns" :data="configs" :loading="loading" :empty="emptyRender" />
   </div>
 
-  <NModal v-model:show="showCreate" preset="card" title="新建配置" style="width: 720px;">
+  <NModal v-model:show="showCreate" preset="card" :title="$t('newConfig')" style="width: 720px;">
     <NSpace vertical>
-      <NInput v-model:value="form.name" placeholder="名称（必填）" />
-      <NInput v-model:value="form.description" placeholder="描述" />
-      <NInput type="textarea" rows="10" v-model:value="form.json" placeholder="粘贴配置 JSON（必填）" />
+      <NInput v-model:value="form.name" :placeholder="$t('nameRequired')" />
+      <NInput v-model:value="form.description" :placeholder="$t('descriptionOptional')" />
+      <NInput type="textarea" rows="10" v-model:value="form.json" :placeholder="$t('configJsonRequired')" />
       <div v-if="formError" style="color: red;">{{ formError }}</div>
       <NSpace>
         <NButton secondary @click="validateConfig">{{ $t('validate') }}</NButton>
@@ -26,9 +26,10 @@
 </template>
 
 <script setup lang="ts">
-import { h, onMounted, ref } from "vue";
+import { computed, h, onMounted, ref } from "vue";
 import { NButton, NButtonGroup, NDataTable, NInput, NModal, NSpace, useMessage, NEmpty } from "naive-ui";
 import { api } from "../modules/api";
+import { useI18n } from "vue-i18n";
 
 const msg = useMessage();
 const configs = ref<any[]>([]);
@@ -38,6 +39,7 @@ const saving = ref(false);
 const validateMsg = ref<string | null>(null);
 const validateOk = ref(false);
 const formError = ref<string | null>(null);
+const { t } = useI18n();
 
 const form = ref({
   name: "",
@@ -45,14 +47,14 @@ const form = ref({
   json: "",
 });
 
-const emptyRender = () => h(NEmpty, { description: "暂无配置" });
+const emptyRender = () => h(NEmpty, { description: t("empty") });
 
 const loadConfigs = async () => {
   loading.value = true;
   try {
     configs.value = await api.configs();
   } catch {
-    msg.error("加载失败");
+    msg.error(t("loadFailed"));
   } finally {
     loading.value = false;
   }
@@ -63,7 +65,7 @@ const parseJson = () => {
     const body = JSON.parse(form.value.json || "{}");
     return body;
   } catch (err: any) {
-    formError.value = err.message || "JSON 解析失败";
+    formError.value = err.message || t("jsonParseFailed");
     return null;
   }
 };
@@ -72,32 +74,32 @@ const validateConfig = async () => {
   try {
     formError.value = null;
     if (!form.value.name) {
-      formError.value = "名称必填";
+      formError.value = t("nameRequiredError");
       return;
     }
     if (!form.value.json) {
-      formError.value = "配置 JSON 必填";
+      formError.value = t("configJsonRequiredError");
       return;
     }
     const body = parseJson();
     if (!body) return;
     const res = await api.validateConfig(body);
     validateOk.value = res.ok;
-    validateMsg.value = res.detail || (res.ok ? "有效" : "无效");
+    validateMsg.value = res.detail || (res.ok ? t("validateResultValid") : t("validateResultInvalid"));
   } catch (err: any) {
     validateOk.value = false;
-    validateMsg.value = err.message || "校验失败";
+    validateMsg.value = err.message || t("validateFailed");
   }
 };
 
 const saveConfig = async () => {
   formError.value = null;
   if (!form.value.name) {
-    formError.value = "名称必填";
+    formError.value = t("nameRequiredError");
     return;
   }
   if (!form.value.json) {
-    formError.value = "配置 JSON 必填";
+    formError.value = t("configJsonRequiredError");
     return;
   }
   const body = parseJson();
@@ -105,12 +107,12 @@ const saveConfig = async () => {
   saving.value = true;
   try {
     await api.createConfig({ name: form.value.name, description: form.value.description, config: body });
-    msg.success("已创建");
+    msg.success(t("createSuccess"));
     showCreate.value = false;
     validateMsg.value = null;
     await loadConfigs();
   } catch (err: any) {
-    msg.error(err?.response?.data?.detail || err.message || "保存失败");
+    msg.error(err?.response?.data?.detail || err.message || t("saveFailed"));
   } finally {
     saving.value = false;
   }
@@ -118,7 +120,7 @@ const saveConfig = async () => {
 
 const handleDelete = async (row: any) => {
   await api.deleteConfig(row.id);
-  msg.success("已删除");
+  msg.success(t("deleteSuccess"));
   await loadConfigs();
 };
 
@@ -130,12 +132,12 @@ const openCreate = () => {
   showCreate.value = true;
 };
 
-const columns = [
-  { title: "名称", key: "name" },
-  { title: "描述", key: "description" },
-  { title: "更新时间", key: "updated_at" },
+const columns = computed(() => [
+  { title: t("name"), key: "name" },
+  { title: t("description"), key: "description" },
+  { title: t("updatedAt"), key: "updated_at" },
   {
-    title: "操作",
+    title: t("actions"),
     key: "actions",
     render(row: any) {
       return h(
@@ -146,14 +148,14 @@ const columns = [
             h(
               NButton,
               { size: "small", onClick: () => handleDelete(row) },
-              { default: () => "删除" },
+              { default: () => t("delete") },
             ),
           ],
         },
       );
     },
   },
-];
+]);
 
 onMounted(loadConfigs);
 </script>

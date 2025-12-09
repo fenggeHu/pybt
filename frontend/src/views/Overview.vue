@@ -3,13 +3,13 @@
     <h3 style="margin-top: 0;">{{ $t("overview") }}</h3>
     <n-grid :cols="3" x-gap="12" y-gap="12">
       <n-gi>
-        <n-statistic label="运行中任务" :value="runningCount" />
+        <n-statistic :label="$t('runningTasks')" :value="runningCount" />
       </n-gi>
       <n-gi>
-        <n-statistic label="配置模板" :value="configsCount" />
+        <n-statistic :label="$t('configsCount')" :value="configsCount" />
       </n-gi>
       <n-gi>
-        <n-statistic label="数据源" :value="dataSourceCount" />
+        <n-statistic :label="$t('dataSourceCount')" :value="dataSourceCount" />
       </n-gi>
     </n-grid>
   </div>

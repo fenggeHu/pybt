@@ -9,32 +9,34 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { NButton, NDataTable, useMessage } from "naive-ui";
 import { api } from "../modules/api";
+import { useI18n } from "vue-i18n";
 
 const msg = useMessage();
 const logs = ref<any[]>([]);
 const loading = ref(false);
+const { t } = useI18n();
 
 const loadAudit = async () => {
   loading.value = true;
   try {
     logs.value = await api.audit();
   } catch {
-    msg.error("加载失败");
+    msg.error(t("loadFailed"));
   } finally {
     loading.value = false;
   }
 };
 
-const columns = [
-  { title: "时间", key: "timestamp" },
-  { title: "用户", key: "actor" },
-  { title: "动作", key: "action" },
-  { title: "目标", key: "target" },
-  { title: "详情", key: "detail" },
-];
+const columns = computed(() => [
+  { title: t("time"), key: "timestamp" },
+  { title: t("user"), key: "actor" },
+  { title: t("action"), key: "action" },
+  { title: t("target"), key: "target" },
+  { title: t("detail"), key: "detail" },
+]);
 
 onMounted(loadAudit);
 </script>

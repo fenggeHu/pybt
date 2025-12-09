@@ -1,6 +1,7 @@
 import axios from "axios";
 import { createDiscreteApi } from "naive-ui";
 import { useAuthStore } from "../stores/auth";
+import { i18n } from "./i18n";
 
 export const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000/api";
 
@@ -10,6 +11,7 @@ export const apiInstance = axios.create({
 });
 
 const { message } = createDiscreteApi(["message"]);
+const { t } = i18n.global;
 
 apiInstance.interceptors.request.use((config) => {
   const auth = useAuthStore();
@@ -31,10 +33,10 @@ apiInstance.interceptors.response.use(
     if (status === 401 && !isAuthEndpoint) {
       const auth = useAuthStore();
       auth.logout();
-      message.error("认证过期，请重新登录");
+      message.error(t("authExpired"));
     } else if (!isAuthEndpoint) {
       // 非登录/注册接口的错误才在这里显示，登录/注册的错误由页面自行处理
-      message.error(error?.response?.data?.detail || error.message || "请求失败");
+      message.error(error?.response?.data?.detail || error.message || t("requestFailed"));
     }
     return Promise.reject(error);
   },

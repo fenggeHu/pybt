@@ -9,32 +9,34 @@
 </template>
 
 <script setup lang="ts">
-import { h, onMounted, ref } from "vue";
-import { NButton, NButtonGroup, NDataTable, NTag, useMessage } from "naive-ui";
+import { computed, h, onMounted, ref } from "vue";
+import { NButton, NDataTable, NTag, useMessage } from "naive-ui";
 import { api } from "../modules/api";
 import type { DefinitionItem } from "../types";
+import { useI18n } from "vue-i18n";
 
 const defs = ref<DefinitionItem[]>([]);
 const loading = ref(false);
 const msg = useMessage();
+const { t } = useI18n();
 
 const loadDefs = async () => {
   loading.value = true;
   try {
     defs.value = await api.definitions();
   } catch {
-    msg.error("加载失败");
+    msg.error(t("loadFailed"));
   } finally {
     loading.value = false;
   }
 };
 
-const columns = [
-  { title: "类型", key: "type" },
-  { title: "类别", key: "category", render: (row: any) => h(NTag, { size: "small" }, { default: () => row.category }) },
-  { title: "摘要", key: "summary" },
+const columns = computed(() => [
+  { title: t("type"), key: "type" },
+  { title: t("category"), key: "category", render: (row: any) => h(NTag, { size: "small" }, { default: () => row.category }) },
+  { title: t("summary"), key: "summary" },
   {
-    title: "参数",
+    title: t("parameters"),
     key: "params",
     render(row: any) {
       if (!row.params?.length) return "-";
@@ -47,7 +49,7 @@ const columns = [
       );
     },
   },
-];
+]);
 
 onMounted(loadDefs);
 </script>

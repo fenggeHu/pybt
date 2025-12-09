@@ -61,6 +61,7 @@ import { computed, ref } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useMessage, NButton, NInput } from "naive-ui";
 import { useAuthStore } from "../stores/auth";
+import { useI18n } from "vue-i18n";
 
 const username = ref("");
 const password = ref("");
@@ -71,6 +72,7 @@ const msg = useMessage();
 const auth = useAuthStore();
 const router = useRouter();
 const route = useRoute();
+const { t } = useI18n();
 
 const isRegister = computed(() => mode.value === "register");
 
@@ -82,27 +84,27 @@ const switchMode = (nextMode: "login" | "register") => {
 
 const onSubmit = async () => {
   if (!username.value || !password.value || (isRegister.value && !confirmPassword.value)) {
-    msg.error(isRegister.value ? "请填写完整的注册信息" : "请输入用户名和密码");
+    msg.error(isRegister.value ? t("registerMissingFields") : t("loginMissingFields"));
     return;
   }
   if (isRegister.value && password.value !== confirmPassword.value) {
-    msg.error("两次输入的密码不一致");
+    msg.error(t("passwordMismatch"));
     return;
   }
   loading.value = true;
   try {
     if (isRegister.value) {
       await auth.register(username.value, password.value);
-      msg.success("注册成功，已自动登录");
+      msg.success(t("registerSuccess"));
     } else {
       await auth.login(username.value, password.value);
-      msg.success("登录成功");
+      msg.success(t("loginSuccess"));
     }
     await auth.fetchMe();
     const redirect = (route.query.redirect as string) || "/";
     router.replace(redirect);
   } catch (err: any) {
-    const fallback = isRegister.value ? "注册失败" : "登录失败";
+    const fallback = isRegister.value ? t("registerFailed") : t("loginFailed");
     msg.error(err?.response?.data?.detail || fallback);
   } finally {
     loading.value = false;

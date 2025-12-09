@@ -1,10 +1,9 @@
 import asyncio
-import hashlib
 from datetime import datetime
 from typing import Any, Optional
 from uuid import uuid4
 
-from ..models import AuditLog, ConfigTemplate, DataSource, Run, RunStatus, User
+from ..models import AuditLog, ConfigTemplate, DataSource, Run, RunStatus
 
 
 class InMemoryStore:
@@ -16,16 +15,6 @@ class InMemoryStore:
         self.runs: dict[str, Run] = {}
         self.run_streams: dict[str, asyncio.Queue[dict[str, Any]]] = {}
         self.audit_logs: list[AuditLog] = []
-        self.users: dict[str, tuple[str, str]] = {}
-        self._ensure_default_admin()
-
-    @staticmethod
-    def _hash_password(password: str) -> str:
-        return hashlib.sha256(password.encode()).hexdigest()
-
-    def _ensure_default_admin(self) -> None:
-        if "admin" not in self.users:
-            self.users["admin"] = (self._hash_password("admin"), "admin")
 
     def create_config(
         self, name: str, config: dict[str, Any], description: Optional[str] = None, config_id: Optional[str] = None
@@ -129,24 +118,6 @@ class InMemoryStore:
         )
         self.audit_logs.append(entry)
         return entry
-
-    def register_user(self, username: str, password: str, role: str = "user") -> User:
-        username = username.strip()
-        if not username or not password:
-            raise ValueError("username and password are required")
-        if username in self.users:
-            raise ValueError("user already exists")
-        self.users[username] = (self._hash_password(password), role)
-        return User(username=username, role=role)
-
-    def authenticate_user(self, username: str, password: str) -> Optional[User]:
-        record = self.users.get(username)
-        if not record:
-            return None
-        stored_hash, role = record
-        if stored_hash != self._hash_password(password):
-            return None
-        return User(username=username, role=role)
 
     def _publish(self, run_id: str, event: dict[str, Any]) -> None:
         queue = self.run_streams.get(run_id)

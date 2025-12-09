@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from ..models import AuthToken, User
-from ..services.auth import create_token, get_current_user
 from ..services import store
+from ..services.auth import create_token, get_current_user
+from ..services.rbac import rbac_service
 
 router = APIRouter(tags=["auth"])
 
@@ -20,7 +21,7 @@ class RegisterRequest(BaseModel):
 
 @router.post("/auth/login", response_model=AuthToken)
 async def login(payload: LoginRequest) -> AuthToken:
-    user = store.authenticate_user(payload.username, payload.password)
+    user = rbac_service.authenticate_user(payload.username, payload.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid username or password")
     token = create_token(user)
@@ -31,7 +32,7 @@ async def login(payload: LoginRequest) -> AuthToken:
 @router.post("/auth/register", response_model=AuthToken, status_code=status.HTTP_201_CREATED)
 async def register(payload: RegisterRequest) -> AuthToken:
     try:
-        user = store.register_user(payload.username, payload.password)
+        user = rbac_service.create_user(payload.username, payload.password)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     token = create_token(user)
@@ -40,5 +41,5 @@ async def register(payload: RegisterRequest) -> AuthToken:
 
 
 @router.get("/auth/me", response_model=User)
-async def me(user: User = get_current_user) -> User:
+async def me(user: User = Depends(get_current_user)) -> User:
     return user

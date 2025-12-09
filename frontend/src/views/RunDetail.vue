@@ -2,7 +2,7 @@
   <div class="card" v-if="run">
     <div style="display: flex; justify-content: space-between; align-items: center;">
       <div>
-        <h3 style="margin: 0;">任务 {{ run.name }}</h3>
+        <h3 style="margin: 0;">{{ $t("runTitle", { name: run.name }) }}</h3>
         <div class="small">{{ run.id }}</div>
       </div>
       <n-space>
@@ -11,15 +11,15 @@
       </n-space>
     </div>
     <div style="margin-top: 12px;">
-      进度：{{ Math.round((run.progress || 0) * 100) }}%
+      {{ $t("progress") }}: {{ Math.round((run.progress || 0) * 100) }}%
     </div>
-    <div style="margin-top: 8px;">消息：{{ run.message || "-" }}</div>
-    <div style="margin-top: 8px;">连接：{{ streamStatus }}</div>
+    <div style="margin-top: 8px;">{{ $t("messageLabel") }}: {{ run.message || "-" }}</div>
+    <div style="margin-top: 8px;">{{ $t("connection") }}: {{ streamStatus }}</div>
     <div style="margin-top: 12px;">
       <n-button size="small" @click="cancelRun" :disabled="canceling">{{ $t('cancel') }}</n-button>
     </div>
     <div style="margin-top: 16px;">
-      <h4>事件</h4>
+      <h4>{{ $t("events") }}</h4>
       <n-list bordered>
         <n-list-item v-for="(evt, idx) in events" :key="idx">
           <div class="small">{{ evt }}</div>
@@ -27,7 +27,7 @@
       </n-list>
     </div>
   </div>
-  <div v-else class="card">未找到任务</div>
+  <div v-else class="card">{{ $t("notFound") }}</div>
 </template>
 
 <script setup lang="ts">
@@ -37,16 +37,18 @@ import { NButton, NList, NListItem, NSpace, NTag, useMessage } from "naive-ui";
 import { api } from "../modules/api";
 import { connectSSE, connectWS } from "../modules/runStream";
 import { useAuthStore } from "../stores/auth";
+import { useI18n } from "vue-i18n";
 
 const route = useRoute();
 const runId = route.params.id as string;
 const msg = useMessage();
 const auth = useAuthStore();
+const { t } = useI18n();
 
 const run = ref<any>(null);
 const events = ref<string[]>([]);
 const canceling = ref(false);
-const streamStatus = ref("connecting...");
+const streamStatus = ref(t("connecting"));
 
 let sse: EventSource | null = null;
 let ws: WebSocket | null = null;
@@ -55,16 +57,16 @@ const loadRun = async () => {
   try {
     run.value = await api.runs().then((list) => list.find((r: any) => r.id === runId));
   } catch {
-    msg.error("加载失败");
+    msg.error(t("loadFailed"));
   }
 };
 
 const startStream = () => {
   if (!auth.token) return;
-  streamStatus.value = "connecting...";
+  streamStatus.value = t("connecting");
   sse = connectSSE(runId, auth.token, (evt) => handleEvent(evt));
   ws = connectWS(runId, auth.token, (evt) => handleEvent(evt));
-  streamStatus.value = "connected";
+  streamStatus.value = t("connected");
 };
 
 const handleEvent = (evt: any) => {
@@ -73,7 +75,7 @@ const handleEvent = (evt: any) => {
     run.value = evt.run;
   }
   if (evt.error) {
-    streamStatus.value = `error: ${evt.error}`;
+    streamStatus.value = t("errorWithReason", { reason: evt.error });
   }
 };
 
@@ -81,10 +83,10 @@ const cancelRun = async () => {
   canceling.value = true;
   try {
     await api.cancelRun(runId);
-    msg.success("已取消");
+    msg.success(t("cancelSuccess"));
     await loadRun();
   } catch {
-    msg.error("取消失败");
+    msg.error(t("cancelFailed"));
   } finally {
     canceling.value = false;
   }
