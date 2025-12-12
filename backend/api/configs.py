@@ -28,7 +28,7 @@ class ConfigValidationRequest(BaseModel):
 
 @router.get("/configs", response_model=list[ConfigTemplate])
 async def list_configs(user: User = Depends(require_permission("configs.read"))) -> list[ConfigTemplate]:
-    return list(store.configs.values())
+    return store.list_configs()
 
 
 @router.post("/configs", response_model=ConfigTemplate)
@@ -40,7 +40,7 @@ async def create_config(payload: ConfigCreate, user: User = Depends(require_perm
 
 @router.get("/configs/{config_id}", response_model=ConfigTemplate)
 async def get_config(config_id: str, user: User = Depends(require_permission("configs.read"))) -> ConfigTemplate:
-    cfg = store.configs.get(config_id)
+    cfg = store.get_config(config_id)
     if not cfg:
         raise HTTPException(status_code=404, detail="config not found")
     return cfg
@@ -68,7 +68,7 @@ async def delete_config(config_id: str, user: User = Depends(require_permission(
 
 @router.post("/configs/{config_id}/clone", response_model=ConfigTemplate)
 async def clone_config(config_id: str, user: User = Depends(require_permission("configs.write"))) -> ConfigTemplate:
-    cfg = store.configs.get(config_id)
+    cfg = store.get_config(config_id)
     if not cfg:
         raise HTTPException(status_code=404, detail="config not found")
     cloned = store.create_config(

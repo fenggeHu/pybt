@@ -15,12 +15,12 @@ router = APIRouter(tags=["runs"])
 
 @router.get("/runs", response_model=list[Run])
 async def list_runs(user: User = Depends(require_permission("runs.read"))) -> list[Run]:
-    return list(store.runs.values())
+    return store.list_runs()
 
 
 @router.get("/runs/{run_id}", response_model=Run)
 async def get_run(run_id: str, user: User = Depends(require_permission("runs.read"))) -> Run:
-    run = store.runs.get(run_id)
+    run = store.get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="run not found")
     return run
@@ -32,7 +32,7 @@ async def create_run(
 ) -> Run:
     config = payload.config
     if payload.config_id:
-        cfg = store.configs.get(payload.config_id)
+        cfg = store.get_config(payload.config_id)
         if not cfg:
             raise HTTPException(status_code=404, detail="config not found")
         config = cfg.config
@@ -47,7 +47,7 @@ async def create_run(
 
 @router.post("/runs/{run_id}/cancel", response_model=Run)
 async def cancel_run(run_id: str, user: User = Depends(require_permission("runs.write"))) -> Run:
-    run = store.runs.get(run_id)
+    run = store.get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="run not found")
     if run.status in {RunStatus.succeeded, RunStatus.failed, RunStatus.cancelled}:

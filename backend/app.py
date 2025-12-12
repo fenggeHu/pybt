@@ -13,6 +13,10 @@ def create_app() -> FastAPI:
     # Initialize database and default RBAC records
     init_db()
     rbac_service.ensure_seed_data()
+    
+    # Setup structured logging
+    from .logging_config import setup_logging
+    setup_logging()
 
     # 开发环境使用正则匹配本地地址，生产环境使用环境变量配置
     cors_origins = os.environ.get("CORS_ORIGINS", "").split(",") if os.environ.get("CORS_ORIGINS") else []

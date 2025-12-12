@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Callable, Iterable, Sequence
 
+from passlib.context import CryptContext
 from sqlalchemy import (
     Boolean,
     Column,
@@ -104,6 +104,7 @@ class RBACService:
 
     def __init__(self, session_factory: Callable[[], Session] = SessionLocal):
         self._session_factory = session_factory
+        self._pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
     @contextmanager
     def _session_scope(self) -> Iterable[Session]:
@@ -117,9 +118,11 @@ class RBACService:
         finally:
             session.close()
 
-    @staticmethod
-    def _hash_password(password: str) -> str:
-        return hashlib.sha256(password.encode()).hexdigest()
+    def _hash_password(self, password: str) -> str:
+        return self._pwd_context.hash(password)
+
+    def _verify_password(self, plain_password: str, hashed_password: str) -> bool:
+        return self._pwd_context.verify(plain_password, hashed_password)
 
     @staticmethod
     def _normalize_username(username: str) -> str:
@@ -170,15 +173,17 @@ class RBACService:
         """Create default roles/permissions and admin user if missing."""
         admin_password_env = os.environ.get("PYBT_ADMIN_PASSWORD")
         admin_password = admin_password or admin_password_env or "admin"
-        admin_password_hash = self._hash_password(admin_password)
+        
         with self._session_scope() as session:
+            # Permissions
             for name, description in DEFAULT_PERMISSIONS.items():
                 existing = session.query(PermissionORM).filter(PermissionORM.name == name).one_or_none()
                 if not existing:
                     session.add(PermissionORM(name=name, description=description))
-
+            
             session.flush()
 
+            # Roles
             for role_name, spec in DEFAULT_ROLES.items():
                 role = session.query(RoleORM).filter(RoleORM.name == role_name).one_or_none()
                 if not role:
@@ -186,18 +191,25 @@ class RBACService:
                     session.add(role)
                 role.description = spec.get("description")
                 role.permissions = self._get_permissions_by_names(session, spec.get("permissions", []))
-
+            
             session.flush()
 
+            # Admin User
             admin_user = session.query(UserORM).filter(UserORM.username == "admin").one_or_none()
             if not admin_user:
-                admin_user = UserORM(username="admin", password_hash=admin_password_hash, is_active=True)
+                admin_user = UserORM(
+                    username="admin", 
+                    password_hash=self._hash_password(admin_password), 
+                    is_active=True
+                )
                 admin_user.roles = self._get_roles_by_names(session, ["admin"])
                 session.add(admin_user)
-            elif admin_password_env:
-                # Allow overriding admin password via env when explicitly provided
-                if admin_user.password_hash != admin_password_hash:
-                    admin_user.password_hash = admin_password_hash
+            elif admin_password_env or admin_password != "admin":
+                # Only re-hash if we have reason to believe it might need updating
+                # Note: We can't easily check 'if password matches' without knowing the plain text
+                # Logic: If ENV is set, we force update. 
+                if admin_password_env:
+                     admin_user.password_hash = self._hash_password(admin_password)
 
     def create_role(self, name: str, permissions: Sequence[str], description: str | None = None) -> Role:
         with self._session_scope() as session:
@@ -259,7 +271,7 @@ class RBACService:
             user = session.query(UserORM).filter(UserORM.username == username).one_or_none()
             if not user or not user.is_active:
                 return None
-            if user.password_hash != self._hash_password(password):
+            if not self._verify_password(password, user.password_hash):
                 return None
             # Refresh relationships before leaving session context
             _ = user.roles  # noqa: F841

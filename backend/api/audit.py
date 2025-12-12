@@ -9,4 +9,4 @@ router = APIRouter(tags=["audit"])
 
 @router.get("/audit", response_model=list[AuditLog])
 async def list_audit(user: User = Depends(require_permission("audit.read"))) -> list[AuditLog]:
-    return store.audit_logs[-200:]
+    return store.list_audit_logs()

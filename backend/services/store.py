@@ -1,47 +1,140 @@
 import asyncio
+from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 from uuid import uuid4
 
+from sqlalchemy.orm import Session
+
 from ..models import AuditLog, ConfigTemplate, DataSource, Run, RunStatus
+from .database import SessionLocal
+from .persistence_models import AuditLogORM, ConfigORM, DataSourceORM, RunORM
 
 
-class InMemoryStore:
-    """Non-persistent store for demo purposes. Swap with DB in production."""
+class PersistentStore:
+    """Persistent store backed by SQLAlchemy."""
 
     def __init__(self) -> None:
-        self.configs: dict[str, ConfigTemplate] = {}
-        self.data_sources: dict[str, DataSource] = {}
-        self.runs: dict[str, Run] = {}
+        self._session_factory = SessionLocal
+        # Run streams are ephemeral and live in memory
         self.run_streams: dict[str, asyncio.Queue[dict[str, Any]]] = {}
-        self.audit_logs: list[AuditLog] = []
+
+    @contextmanager
+    def _session_scope(self) -> Iterable[Session]:
+        session = self._session_factory()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    # --- Helpers ---
+
+    def _to_config_model(self, orm: ConfigORM) -> ConfigTemplate:
+        return ConfigTemplate(
+            id=orm.id,
+            name=orm.name,
+            description=orm.description,
+            config=orm.config,
+            created_at=orm.created_at,
+            updated_at=orm.updated_at,
+        )
+
+    def _to_data_source_model(self, orm: DataSourceORM) -> DataSource:
+        return DataSource(
+            id=orm.id,
+            name=orm.name,
+            type=orm.type,
+            path=orm.path,
+            symbol=orm.symbol,
+            description=orm.description,
+            healthy=orm.healthy,
+            last_checked=orm.last_checked,
+        )
+
+    def _to_run_model(self, orm: RunORM) -> Run:
+        return Run(
+            id=orm.id,
+            name=orm.name,
+            config=orm.config,
+            config_id=orm.config_id,
+            status=RunStatus(orm.status),
+            created_at=orm.created_at,
+            updated_at=orm.updated_at,
+            progress=orm.progress,
+            message=orm.message,
+            artifacts=orm.artifacts or [],
+        )
+
+    def _to_audit_model(self, orm: AuditLogORM) -> AuditLog:
+        return AuditLog(
+            id=orm.id,
+            actor=orm.actor,
+            action=orm.action,
+            target=orm.target,
+            detail=orm.detail,
+            timestamp=orm.timestamp,
+        )
+
+    # --- Configs ---
+
+    def list_configs(self) -> list[ConfigTemplate]:
+        with self._session_scope() as session:
+            rows = session.query(ConfigORM).order_by(ConfigORM.updated_at.desc()).all()
+            return [self._to_config_model(r) for r in rows]
+
+    def get_config(self, config_id: str) -> ConfigTemplate | None:
+        with self._session_scope() as session:
+            row = session.query(ConfigORM).filter(ConfigORM.id == config_id).one_or_none()
+            return self._to_config_model(row) if row else None
 
     def create_config(
         self, name: str, config: dict[str, Any], description: Optional[str] = None, config_id: Optional[str] = None
     ) -> ConfigTemplate:
-        now = datetime.utcnow()
-        cfg = ConfigTemplate(
-            id=config_id or uuid4().hex,
-            name=name,
-            description=description,
-            config=config,
-            created_at=now,
-            updated_at=now,
-        )
-        self.configs[cfg.id] = cfg
-        return cfg
+        with self._session_scope() as session:
+            row = ConfigORM(
+                id=config_id or uuid4().hex,
+                name=name,
+                description=description,
+                config=config,
+            )
+            session.add(row)
+            session.flush()
+            session.refresh(row)
+            return self._to_config_model(row)
 
     def update_config(self, config_id: str, payload: dict[str, Any]) -> ConfigTemplate:
-        if config_id not in self.configs:
-            raise KeyError(config_id)
-        current = self.configs[config_id]
-        updated = current.copy(update={**payload, "updated_at": datetime.utcnow()})
-        self.configs[config_id] = updated
-        return updated
+        with self._session_scope() as session:
+            row = session.query(ConfigORM).filter(ConfigORM.id == config_id).one_or_none()
+            if not row:
+                raise KeyError(config_id)
+            
+            for key, value in payload.items():
+                if hasattr(row, key):
+                    setattr(row, key, value)
+            # updated_at handled by onupdate
+            session.flush()
+            session.refresh(row)
+            return self._to_config_model(row)
 
     def delete_config(self, config_id: str) -> None:
-        if config_id in self.configs:
-            del self.configs[config_id]
+        with self._session_scope() as session:
+            session.query(ConfigORM).filter(ConfigORM.id == config_id).delete()
+
+    # --- Data Sources ---
+
+    def list_data_sources(self) -> list[DataSource]:
+        with self._session_scope() as session:
+            rows = session.query(DataSourceORM).order_by(DataSourceORM.name).all()
+            return [self._to_data_source_model(r) for r in rows]
+
+    def get_data_source(self, source_id: str) -> DataSource | None:
+        with self._session_scope() as session:
+            row = session.query(DataSourceORM).filter(DataSourceORM.id == source_id).one_or_none()
+            return self._to_data_source_model(row) if row else None
 
     def create_data_source(
         self,
@@ -51,73 +144,114 @@ class InMemoryStore:
         symbol: Optional[str] = None,
         description: Optional[str] = None,
     ) -> DataSource:
-        ds = DataSource(
-            id=uuid4().hex,
-            name=name,
-            type=source_type,
-            path=path,
-            symbol=symbol,
-            description=description,
-            healthy=None,
-            last_checked=None,
-        )
-        self.data_sources[ds.id] = ds
-        return ds
+        with self._session_scope() as session:
+            row = DataSourceORM(
+                id=uuid4().hex,
+                name=name,
+                type=source_type,
+                path=path,
+                symbol=symbol,
+                description=description,
+            )
+            session.add(row)
+            session.flush()
+            session.refresh(row)
+            return self._to_data_source_model(row)
 
     def update_data_source(self, source_id: str, payload: dict[str, Any]) -> DataSource:
-        if source_id not in self.data_sources:
-            raise KeyError(source_id)
-        updated = self.data_sources[source_id].copy(update=payload)
-        self.data_sources[source_id] = updated
-        return updated
+        with self._session_scope() as session:
+            row = session.query(DataSourceORM).filter(DataSourceORM.id == source_id).one_or_none()
+            if not row:
+                raise KeyError(source_id)
+            
+            for key, value in payload.items():
+                if hasattr(row, key):
+                    setattr(row, key, value)
+            
+            session.flush()
+            session.refresh(row)
+            return self._to_data_source_model(row)
 
     def delete_data_source(self, source_id: str) -> None:
-        if source_id in self.data_sources:
-            del self.data_sources[source_id]
+        with self._session_scope() as session:
+            session.query(DataSourceORM).filter(DataSourceORM.id == source_id).delete()
+
+    # --- Runs ---
+
+    def list_runs(self) -> list[Run]:
+        with self._session_scope() as session:
+            rows = session.query(RunORM).order_by(RunORM.created_at.desc()).all()
+            return [self._to_run_model(r) for r in rows]
+
+    def get_run(self, run_id: str) -> Run | None:
+        with self._session_scope() as session:
+            row = session.query(RunORM).filter(RunORM.id == run_id).one_or_none()
+            return self._to_run_model(row) if row else None
 
     def create_run(
         self, name: str, config: dict[str, Any], config_id: Optional[str] = None, status: RunStatus = RunStatus.pending
     ) -> Run:
-        now = datetime.utcnow()
-        run = Run(
-            id=uuid4().hex,
-            name=name,
-            config=config,
-            config_id=config_id,
-            status=status,
-            created_at=now,
-            updated_at=now,
-            progress=0.0,
-            message=None,
-            artifacts=[],
-        )
-        self.runs[run.id] = run
-        self.run_streams[run.id] = asyncio.Queue()
-        self._publish(run.id, {"type": "created", "run": run.model_dump()})
-        return run
+        with self._session_scope() as session:
+            row = RunORM(
+                id=uuid4().hex,
+                name=name,
+                config=config,
+                config_id=config_id,
+                status=status.value,
+                progress=0.0,
+            )
+            session.add(row)
+            session.flush()
+            session.refresh(row)
+            
+            run_model = self._to_run_model(row)
+            
+        self.run_streams[run_model.id] = asyncio.Queue()
+        self._publish(run_model.id, {"type": "created", "run": run_model.model_dump()})
+        return run_model
 
     def update_run(self, run_id: str, payload: dict[str, Any]) -> Run:
-        if run_id not in self.runs:
-            raise KeyError(run_id)
-        updated = self.runs[run_id].copy(update={**payload, "updated_at": datetime.utcnow()})
-        self.runs[run_id] = updated
-        self._publish(run_id, {"type": "updated", "run": updated.model_dump()})
-        return updated
+        with self._session_scope() as session:
+            row = session.query(RunORM).filter(RunORM.id == run_id).one_or_none()
+            if not row:
+                raise KeyError(run_id)
+            
+            for key, value in payload.items():
+                if key == "status" and isinstance(value, RunStatus):
+                    value = value.value
+                if hasattr(row, key):
+                    setattr(row, key, value)
+            
+            session.flush()
+            session.refresh(row)
+            run_model = self._to_run_model(row)
+
+        self._publish(run_id, {"type": "updated", "run": run_model.model_dump()})
+        return run_model
 
     def get_run_queue(self, run_id: str) -> asyncio.Queue[dict[str, Any]] | None:
         return self.run_streams.get(run_id)
 
+    # --- Audit ---
+
+    def list_audit_logs(self, limit: int = 200) -> list[AuditLog]:
+        with self._session_scope() as session:
+            rows = session.query(AuditLogORM).order_by(AuditLogORM.timestamp.desc()).limit(limit).all()
+            return [self._to_audit_model(r) for r in rows]
+
     def add_audit(self, actor: str, action: str, target: str, detail: Optional[str] = None) -> AuditLog:
-        entry = AuditLog(
-            id=uuid4().hex,
-            actor=actor,
-            action=action,
-            target=target,
-            detail=detail,
-            timestamp=datetime.utcnow(),
-        )
-        self.audit_logs.append(entry)
-        return entry
+        with self._session_scope() as session:
+            row = AuditLogORM(
+                id=uuid4().hex,
+                actor=actor,
+                action=action,
+                target=target,
+                detail=detail,
+            )
+            session.add(row)
+            session.flush()
+            session.refresh(row)
+            return self._to_audit_model(row)
 
     def _publish(self, run_id: str, event: dict[str, Any]) -> None:
         queue = self.run_streams.get(run_id)
@@ -125,4 +259,4 @@ class InMemoryStore:
             queue.put_nowait(event)
 
 
-store = InMemoryStore()
+store = PersistentStore()

@@ -16,7 +16,7 @@ def get_run_runner() -> Callable[[str], None]:
     """Return a callable that executes a run in the background."""
 
     def _run(run_id: str) -> None:
-        run = store.runs.get(run_id)
+        run = store.get_run(run_id)
         if not run:
             return
         store.update_run(run_id, {"status": RunStatus.running, "progress": 0.1})

@@ -21,7 +21,7 @@ class DataSourceCreate(BaseModel):
 
 @router.get("/data-sources", response_model=list[DataSource])
 async def list_data_sources(user: User = Depends(require_permission("data_sources.read"))) -> list[DataSource]:
-    return list(store.data_sources.values())
+    return store.list_data_sources()
 
 
 @router.post("/data-sources", response_model=DataSource)
@@ -41,7 +41,7 @@ async def create_data_source(
 
 @router.get("/data-sources/{source_id}", response_model=DataSource)
 async def get_data_source(source_id: str, user: User = Depends(require_permission("data_sources.read"))) -> DataSource:
-    ds = store.data_sources.get(source_id)
+    ds = store.get_data_source(source_id)
     if not ds:
         raise HTTPException(status_code=404, detail="data source not found")
     return ds
@@ -68,7 +68,7 @@ async def delete_data_source(source_id: str, user: User = Depends(require_permis
 
 @router.post("/data-sources/{source_id}/probe", response_model=DataSource)
 async def probe_data_source(source_id: str, user: User = Depends(require_permission("data_sources.write"))) -> DataSource:
-    ds = store.data_sources.get(source_id)
+    ds = store.get_data_source(source_id)
     if not ds:
         raise HTTPException(status_code=404, detail="data source not found")
 

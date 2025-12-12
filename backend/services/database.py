@@ -39,5 +39,6 @@ def init_db() -> None:
     """Create tables if they do not exist."""
     # Import models so metadata is populated before create_all
     from . import rbac as _  # noqa: F401
+    from . import persistence_models as _  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
