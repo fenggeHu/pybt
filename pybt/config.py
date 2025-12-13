@@ -8,10 +8,10 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 from pybt.analytics import DetailedReporter, EquityCurveReporter, TradeLogReporter
 from pybt.core.engine import BacktestEngine, EngineConfig
 from pybt.core.interfaces import DataFeed, PerformanceReporter, RiskManager, Strategy
-from pybt.data import InMemoryBarFeed, LocalCSVBarFeed, RESTPollingFeed, WebSocketJSONFeed, load_bars_from_csv
+from pybt.data import ADataLiveFeed, InMemoryBarFeed, LocalCSVBarFeed, RESTPollingFeed, WebSocketJSONFeed
 from pybt.execution import ImmediateExecutionHandler
 from pybt.portfolio import NaivePortfolio
-from pybt.risk import MaxPositionRisk
+from pybt.risk import BuyingPowerRisk, ConcentrationRisk, MaxPositionRisk, PriceBandRisk
 from pybt.strategies import MovingAverageCrossStrategy, UptrendBreakoutStrategy
 from pybt.core.models import Bar
 
@@ -73,6 +73,14 @@ def _build_feed(cfg: Mapping[str, Any]) -> DataFeed:
             symbol=_require(cfg, "symbol"),
             url=_require(cfg, "url"),
             max_ticks=cfg.get("max_ticks"),
+            heartbeat_interval=cfg.get("heartbeat_interval"),
+        )
+
+    if feed_type == "adata":
+        return ADataLiveFeed(
+            symbol=_require(cfg, "symbol"),
+            poll_interval=float(cfg.get("poll_interval", 1.0)),
+            max_ticks=cfg.get("max_ticks"),
         )
 
     raise ValueError(f"Unsupported data_feed type: {feed_type}")
@@ -105,6 +113,8 @@ def _build_execution(cfg: Mapping[str, Any]) -> ImmediateExecutionHandler:
     return ImmediateExecutionHandler(
         slippage=float(cfg.get("slippage", 0.0)),
         commission=float(cfg.get("commission", 0.0)),
+        partial_fill_ratio=cfg.get("partial_fill_ratio"),
+        max_staleness=cfg.get("max_staleness"),
     )
 
 
@@ -118,27 +128,52 @@ def _build_portfolio(cfg: Mapping[str, Any]) -> NaivePortfolio:
     )
 
 
-def _build_risk_managers(cfgs: Optional[Sequence[Mapping[str, Any]]]) -> list[RiskManager]:
+def _build_risk_managers(
+    cfgs: Optional[Sequence[Mapping[str, Any]]],
+    *,
+    default_initial_cash: float,
+) -> list[RiskManager]:
     managers: list[RiskManager] = []
     for cfg in cfgs or []:
         risk_type = _require(cfg, "type")
         if risk_type == "max_position":
             managers.append(MaxPositionRisk(limit=int(_require(cfg, "limit"))))
+        elif risk_type == "buying_power":
+            managers.append(
+                BuyingPowerRisk(
+                    initial_cash=float(cfg.get("initial_cash", default_initial_cash)),
+                    max_leverage=float(cfg.get("max_leverage", 1.0)),
+                    reserve_cash=float(cfg.get("reserve_cash", 0.0)),
+                )
+            )
+        elif risk_type == "concentration":
+            managers.append(
+                ConcentrationRisk(
+                    initial_cash=float(cfg.get("initial_cash", default_initial_cash)),
+                    max_fraction=float(cfg.get("max_fraction", 0.5)),
+                )
+            )
+        elif risk_type == "price_band":
+            managers.append(PriceBandRisk(band_pct=float(cfg.get("band_pct", 0.05))))
         else:
             raise ValueError(f"Unsupported risk manager type: {risk_type}")
     return managers
 
 
-def _build_reporters(cfgs: Optional[Sequence[Mapping[str, Any]]]) -> list[PerformanceReporter]:
+def _build_reporters(
+    cfgs: Optional[Sequence[Mapping[str, Any]]],
+    *,
+    default_initial_cash: float,
+) -> list[PerformanceReporter]:
     reporters: list[PerformanceReporter] = []
     for cfg in cfgs or []:
         rep_type = _require(cfg, "type")
         if rep_type == "equity":
-            reporters.append(EquityCurveReporter(initial_cash=float(cfg.get("initial_cash", 100_000.0))))
+            reporters.append(EquityCurveReporter(initial_cash=float(cfg.get("initial_cash", default_initial_cash))))
         elif rep_type == "detailed":
             reporters.append(
                 DetailedReporter(
-                    initial_cash=float(cfg.get("initial_cash", 100_000.0)),
+                    initial_cash=float(cfg.get("initial_cash", default_initial_cash)),
                     track_equity_curve=bool(cfg.get("track_equity_curve", True)),
                 )
             )
@@ -156,15 +191,8 @@ def _build_reporters(cfgs: Optional[Sequence[Mapping[str, Any]]]) -> list[Perfor
     return reporters
 
 
-def load_engine_from_json(path: Path | str) -> BacktestEngine:
-    """Load BacktestEngine from a JSON config file with validation.
-
-    The config file is the supplier; this builder owns validation and wiring,
-    returning an engine that owns the lifecycle of all constructed components.
-    """
-
-    cfg_path = Path(path)
-    raw = json.loads(cfg_path.read_text(encoding="utf-8"))
+def load_engine_from_dict(raw: Mapping[str, Any]) -> BacktestEngine:
+    """Load BacktestEngine from an in-memory config dict."""
 
     data_feed = _build_feed(_require(raw, "data_feed"))
     strategies_cfg = _require(raw, "strategies")
@@ -172,10 +200,13 @@ def load_engine_from_json(path: Path | str) -> BacktestEngine:
         raise ValueError("strategies must be an array")
     strategies = [_build_strategy(item) for item in strategies_cfg]
 
-    portfolio = _build_portfolio(_require(raw, "portfolio"))
+    portfolio_cfg = _require(raw, "portfolio")
+    portfolio = _build_portfolio(portfolio_cfg)
     execution = _build_execution(_require(raw, "execution"))
-    risk = _build_risk_managers(raw.get("risk"))
-    reporters = _build_reporters(raw.get("reporters"))
+
+    default_initial_cash = float(portfolio_cfg.get("initial_cash", 100_000.0))
+    risk = _build_risk_managers(raw.get("risk"), default_initial_cash=default_initial_cash)
+    reporters = _build_reporters(raw.get("reporters"), default_initial_cash=default_initial_cash)
 
     engine_cfg = EngineConfig(
         name=str(raw.get("name", "backtest")),
@@ -194,4 +225,16 @@ def load_engine_from_json(path: Path | str) -> BacktestEngine:
     )
 
 
-__all__ = ["load_engine_from_json"]
+def load_engine_from_json(path: Path | str) -> BacktestEngine:
+    """Load BacktestEngine from a JSON config file with validation.
+
+    The config file is the supplier; this builder owns validation and wiring,
+    returning an engine that owns the lifecycle of all constructed components.
+    """
+
+    cfg_path = Path(path)
+    raw = json.loads(cfg_path.read_text(encoding="utf-8"))
+    return load_engine_from_dict(raw)
+
+
+__all__ = ["load_engine_from_dict", "load_engine_from_json"]

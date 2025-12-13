@@ -20,7 +20,7 @@ from .errors import (
     PyBTError,
     RiskError,
 )
-from .config import load_engine_from_json
+from .config import load_engine_from_dict, load_engine_from_json
 from .core import (
     BacktestEngine,
     Bar,
@@ -64,6 +64,7 @@ __all__ = [
     "PersistenceError",
     "RiskError",
     "log_event",
+    "load_engine_from_dict",
     "load_engine_from_json",
     "configure_logging",
     "analytics",
