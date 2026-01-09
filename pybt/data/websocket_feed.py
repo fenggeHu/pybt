@@ -7,6 +7,7 @@ ping/pong and reconnection handling.
 """
 
 import asyncio
+import inspect
 import json
 import time
 from datetime import datetime
@@ -41,7 +42,7 @@ class WebSocketJSONFeed(DataFeed):
         self.symbol = symbol
         self.url = url
         self.parser = parser or self._default_parser
-        self.loop = loop or asyncio.get_event_loop()
+        self.loop, self._owns_loop = self._resolve_loop(loop)
         self.max_ticks = max_ticks
         self._ticks = 0
         self.backoff_seconds = backoff_seconds
@@ -49,8 +50,21 @@ class WebSocketJSONFeed(DataFeed):
         self._connect = connect or websockets.connect  # type: ignore[attr-defined]
         self.heartbeat_interval = heartbeat_interval
 
+    @staticmethod
+    def _resolve_loop(loop: Optional[asyncio.AbstractEventLoop]) -> tuple[asyncio.AbstractEventLoop, bool]:
+        if loop is not None:
+            return loop, False
+        try:
+            return asyncio.get_running_loop(), False
+        except RuntimeError:
+            return asyncio.new_event_loop(), True
+
     def prime(self) -> None:
         self._ticks = 0
+
+    def on_stop(self) -> None:
+        if self._owns_loop and not self.loop.is_closed():
+            self.loop.close()
 
     def has_next(self) -> bool:
         if self.max_ticks is None:
@@ -109,7 +123,9 @@ class WebSocketJSONFeed(DataFeed):
     async def _recv_with_heartbeat(self, ws: Any) -> Any:
         if self.heartbeat_interval is not None and hasattr(ws, "ping"):
             try:
-                ws.ping()
+                result = ws.ping()
+                if inspect.isawaitable(result):
+                    await result
             except Exception:
                 pass
         return await ws.recv()

@@ -14,22 +14,6 @@
 python examples/simple_backtest.py
 ```
 
-### 1.5. amount_analysis_demo.py - 成交额分析示例
-
-展示如何使用 Bar 中的 `amount` 字段进行流动性过滤。
-
-**运行:**
-
-```bash
-python examples/amount_analysis_demo.py
-```
-
-**特点:**
-
-- 演示成交额字段的使用
-- 实现基于流动性的交易过滤
-- 避免在流动性不足时交易
-
 ### 2. detailed_report_demo.py - 详细报告示例
 
 展示 `DetailedReporter` 的功能，包括交易明细、最大回撤等详细指标。
