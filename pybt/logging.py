@@ -46,7 +46,7 @@ def configure_logging(level: str = "INFO", fmt: Optional[str] = None, json_forma
         logging.basicConfig(level=getattr(logging, level.upper(), logging.INFO), handlers=[handler])
     else:
         if fmt is None:
-            fmt = "%(asctime)s %(levelname)s %(name)s - %(message)s"
+            fmt = "%(asctime)-15s %(levelname)-8s [PID:%(process)d] [%(filename)s:%(lineno)d - %(funcName)s] %(message)s"
         logging.basicConfig(level=getattr(logging, level.upper(), logging.INFO), format=fmt)
 
 
