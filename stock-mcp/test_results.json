@@ -1,0 +1,42 @@
+{
+  "total_tools": 7,
+  "passed": 7,
+  "failed": 0,
+  "tests": [
+    {
+      "tool": "get_stock_list",
+      "status": "passed",
+      "details": "Fetched 5800 stocks"
+    },
+    {
+      "tool": "get_stock_history",
+      "status": "passed",
+      "details": "Fetched 63 days of data"
+    },
+    {
+      "tool": "analyze_volume_surge",
+      "status": "passed",
+      "details": "Volume growth: 59.52%, Amount growth: 57.71%"
+    },
+    {
+      "tool": "analyze_amount_surge",
+      "status": "passed",
+      "details": "Amount growth: 37.07%"
+    },
+    {
+      "tool": "screen_stocks",
+      "status": "passed",
+      "details": "Tested 3 stocks, 0 met criteria"
+    },
+    {
+      "tool": "update_cache",
+      "status": "passed",
+      "details": "Updated 2 stocks"
+    },
+    {
+      "tool": "get_cache_status",
+      "status": "passed",
+      "details": "2 stocks cached"
+    }
+  ]
+}
