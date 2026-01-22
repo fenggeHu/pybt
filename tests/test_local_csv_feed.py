@@ -33,7 +33,6 @@ def test_load_bars_from_csv_respects_bounds(tmp_path: Path) -> None:
 def test_local_csv_feed_iterates(tmp_path: Path) -> None:
     path = _write_csv(tmp_path)
     feed = LocalCSVBarFeed(path)
-    feed.bind(object())  # bus will be set later
 
     from pybt.core.event_bus import EventBus
     from pybt.core.events import MarketEvent
@@ -50,3 +49,25 @@ def test_local_csv_feed_iterates(tmp_path: Path) -> None:
 
     assert len(captured) == 3
     assert captured[0].fields["close"] == 10.5
+
+
+def test_local_csv_feed_has_next_is_side_effect_free(tmp_path: Path) -> None:
+    path = _write_csv(tmp_path)
+    feed = LocalCSVBarFeed(path)
+
+    from pybt.core.event_bus import EventBus
+    from pybt.core.events import MarketEvent
+
+    bus = EventBus()
+    feed.bind(bus)
+    captured: list[MarketEvent] = []
+    bus.subscribe(MarketEvent, captured.append)
+
+    feed.prime()
+    assert feed.has_next() is True
+    assert feed.has_next() is True
+
+    feed.next()
+    bus.dispatch()
+    assert len(captured) == 1
+    assert captured[0].timestamp == datetime(2024, 1, 1)

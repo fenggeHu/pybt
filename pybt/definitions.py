@@ -38,9 +38,24 @@ def list_definitions() -> list[ComponentDef]:
             summary="CSV/Parquet daily bars",
             params=[
                 ParamDef(name="path", type="str", description="CSV/Parquet file path"),
-                ParamDef(name="symbol", type="str", required=False, description="Symbol code (defaults to folder name)"),
-                ParamDef(name="start", type="str", required=False, description="ISO datetime/date filter (inclusive)"),
-                ParamDef(name="end", type="str", required=False, description="ISO datetime/date filter (inclusive)"),
+                ParamDef(
+                    name="symbol",
+                    type="str",
+                    required=False,
+                    description="Symbol code (defaults to folder name)",
+                ),
+                ParamDef(
+                    name="start",
+                    type="str",
+                    required=False,
+                    description="ISO datetime/date filter (inclusive)",
+                ),
+                ParamDef(
+                    name="end",
+                    type="str",
+                    required=False,
+                    description="ISO datetime/date filter (inclusive)",
+                ),
             ],
         ),
         ComponentDef(
@@ -48,7 +63,11 @@ def list_definitions() -> list[ComponentDef]:
             type="inmemory",
             summary="In-memory bars (deterministic)",
             params=[
-                ParamDef(name="bars", type="list[bar]", description="Array of bars with timestamp/open/high/low/close"),
+                ParamDef(
+                    name="bars",
+                    type="list[bar]",
+                    description="Array of bars with timestamp/open/high/low/close",
+                ),
             ],
         ),
         ComponentDef(
@@ -57,8 +76,14 @@ def list_definitions() -> list[ComponentDef]:
             summary="Generic REST polling feed",
             params=[
                 ParamDef(name="symbol", type="str"),
-                ParamDef(name="url", type="str", description="Endpoint returning JSON with at least {price: float}"),
-                ParamDef(name="poll_interval", type="float", required=False, default=1.0),
+                ParamDef(
+                    name="url",
+                    type="str",
+                    description="Endpoint returning JSON with at least {price: float}",
+                ),
+                ParamDef(
+                    name="poll_interval", type="float", required=False, default=1.0
+                ),
                 ParamDef(name="max_ticks", type="int", required=False),
             ],
         ),
@@ -68,7 +93,11 @@ def list_definitions() -> list[ComponentDef]:
             summary="Generic WebSocket JSON feed",
             params=[
                 ParamDef(name="symbol", type="str"),
-                ParamDef(name="url", type="str", description="WebSocket endpoint yielding JSON with at least {price: float}"),
+                ParamDef(
+                    name="url",
+                    type="str",
+                    description="WebSocket endpoint yielding JSON with at least {price: float}",
+                ),
                 ParamDef(name="max_ticks", type="int", required=False),
                 ParamDef(name="heartbeat_interval", type="float", required=False),
             ],
@@ -79,7 +108,9 @@ def list_definitions() -> list[ComponentDef]:
             summary="AData live polling feed (optional dependency)",
             params=[
                 ParamDef(name="symbol", type="str"),
-                ParamDef(name="poll_interval", type="float", required=False, default=1.0),
+                ParamDef(
+                    name="poll_interval", type="float", required=False, default=1.0
+                ),
                 ParamDef(name="max_ticks", type="int", required=False),
             ],
         ),
@@ -101,8 +132,12 @@ def list_definitions() -> list[ComponentDef]:
             params=[
                 ParamDef(name="symbol", type="str"),
                 ParamDef(name="window", type="int", default=20, required=False),
-                ParamDef(name="breakout_factor", type="float", default=1.5, required=False),
-                ParamDef(name="strategy_id", type="str", default="uptrend", required=False),
+                ParamDef(
+                    name="breakout_factor", type="float", default=1.5, required=False
+                ),
+                ParamDef(
+                    name="strategy_id", type="str", default="uptrend", required=False
+                ),
             ],
         ),
         ComponentDef(
@@ -111,7 +146,9 @@ def list_definitions() -> list[ComponentDef]:
             summary="Fixed lot size portfolio",
             params=[
                 ParamDef(name="lot_size", type="int", default=100, required=False),
-                ParamDef(name="initial_cash", type="float", default=100_000.0, required=False),
+                ParamDef(
+                    name="initial_cash", type="float", default=100_000.0, required=False
+                ),
             ],
         ),
         ComponentDef(
@@ -121,8 +158,25 @@ def list_definitions() -> list[ComponentDef]:
             params=[
                 ParamDef(name="slippage", type="float", default=0.0, required=False),
                 ParamDef(name="commission", type="float", default=0.0, required=False),
-                ParamDef(name="partial_fill_ratio", type="float", required=False, description="e.g. 0.5 for 50% partial fill"),
-                ParamDef(name="max_staleness", type="float", required=False, description="Max seconds since last market tick"),
+                ParamDef(
+                    name="partial_fill_ratio",
+                    type="float",
+                    required=False,
+                    description="e.g. 0.5 for 50% partial fill",
+                ),
+                ParamDef(
+                    name="max_staleness",
+                    type="float",
+                    required=False,
+                    description="Max seconds since last market tick",
+                ),
+                ParamDef(
+                    name="fill_timing",
+                    type="str",
+                    default="current_close",
+                    required=False,
+                    description="current_close (default, has look-ahead) or next_open (realistic)",
+                ),
             ],
         ),
         ComponentDef(
@@ -136,9 +190,18 @@ def list_definitions() -> list[ComponentDef]:
             type="buying_power",
             summary="Buying power limiter (supports leverage)",
             params=[
-                ParamDef(name="max_leverage", type="float", default=1.0, required=False),
-                ParamDef(name="reserve_cash", type="float", default=0.0, required=False),
-                ParamDef(name="initial_cash", type="float", required=False, description="Defaults to portfolio.initial_cash"),
+                ParamDef(
+                    name="max_leverage", type="float", default=1.0, required=False
+                ),
+                ParamDef(
+                    name="reserve_cash", type="float", default=0.0, required=False
+                ),
+                ParamDef(
+                    name="initial_cash",
+                    type="float",
+                    required=False,
+                    description="Defaults to portfolio.initial_cash",
+                ),
             ],
         ),
         ComponentDef(
@@ -146,22 +209,36 @@ def list_definitions() -> list[ComponentDef]:
             type="concentration",
             summary="Per-symbol concentration cap",
             params=[
-                ParamDef(name="max_fraction", type="float", default=0.5, required=False),
-                ParamDef(name="initial_cash", type="float", required=False, description="Defaults to portfolio.initial_cash"),
+                ParamDef(
+                    name="max_fraction", type="float", default=0.5, required=False
+                ),
+                ParamDef(
+                    name="initial_cash",
+                    type="float",
+                    required=False,
+                    description="Defaults to portfolio.initial_cash",
+                ),
             ],
         ),
         ComponentDef(
             category="risk",
             type="price_band",
             summary="Rejects orders deviating too far from last price",
-            params=[ParamDef(name="band_pct", type="float", default=0.05, required=False)],
+            params=[
+                ParamDef(name="band_pct", type="float", default=0.05, required=False)
+            ],
         ),
         ComponentDef(
             category="reporter",
             type="equity",
             summary="Equity/cash/gross exposure metrics",
             params=[
-                ParamDef(name="initial_cash", type="float", required=False, description="Defaults to portfolio.initial_cash"),
+                ParamDef(
+                    name="initial_cash",
+                    type="float",
+                    required=False,
+                    description="Defaults to portfolio.initial_cash",
+                ),
             ],
         ),
         ComponentDef(
@@ -169,8 +246,15 @@ def list_definitions() -> list[ComponentDef]:
             type="detailed",
             summary="Detailed PnL/drawdown report",
             params=[
-                ParamDef(name="initial_cash", type="float", required=False, description="Defaults to portfolio.initial_cash"),
-                ParamDef(name="track_equity_curve", type="bool", default=True, required=False),
+                ParamDef(
+                    name="initial_cash",
+                    type="float",
+                    required=False,
+                    description="Defaults to portfolio.initial_cash",
+                ),
+                ParamDef(
+                    name="track_equity_curve", type="bool", default=True, required=False
+                ),
             ],
         ),
         ComponentDef(

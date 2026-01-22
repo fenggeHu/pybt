@@ -22,3 +22,23 @@ def test_inmemory_feed_publishes_sorted_events() -> None:
         bus.dispatch()
 
     assert [e.timestamp for e in captured] == [bar0.timestamp, bar1.timestamp]
+
+
+def test_inmemory_feed_has_next_is_side_effect_free() -> None:
+    bar0 = Bar(symbol="AAA", timestamp=datetime(2024, 1, 1), open=1, high=2, low=0.5, close=1.4, volume=8)
+    bar1 = Bar(symbol="AAA", timestamp=datetime(2024, 1, 2), open=1, high=2, low=0.5, close=1.5, volume=10)
+    feed = InMemoryBarFeed([bar0, bar1])
+    bus = EventBus()
+    feed.bind(bus)
+
+    captured: list[MarketEvent] = []
+    bus.subscribe(MarketEvent, captured.append)
+
+    feed.prime()
+    assert feed.has_next() is True
+    assert feed.has_next() is True
+
+    feed.next()
+    bus.dispatch()
+    assert len(captured) == 1
+    assert captured[0].timestamp == bar0.timestamp

@@ -8,7 +8,13 @@ from typing import Any, Iterable, Mapping, Optional, Sequence
 from pybt.analytics import DetailedReporter, EquityCurveReporter, TradeLogReporter
 from pybt.core.engine import BacktestEngine, EngineConfig
 from pybt.core.interfaces import DataFeed, PerformanceReporter, RiskManager, Strategy
-from pybt.data import ADataLiveFeed, InMemoryBarFeed, LocalCSVBarFeed, RESTPollingFeed, WebSocketJSONFeed
+from pybt.data import (
+    ADataLiveFeed,
+    InMemoryBarFeed,
+    LocalCSVBarFeed,
+    RESTPollingFeed,
+    WebSocketJSONFeed,
+)
 from pybt.execution import ImmediateExecutionHandler
 from pybt.portfolio import NaivePortfolio
 from pybt.risk import BuyingPowerRisk, ConcentrationRisk, MaxPositionRisk, PriceBandRisk
@@ -46,10 +52,13 @@ def _build_feed(cfg: Mapping[str, Any]) -> DataFeed:
         bars: list[Bar] = []
         for raw in raw_bars:
             ts = _parse_dt(_require(raw, "timestamp"))
+            if ts is None:
+                raise ValueError("Bar.timestamp cannot be null")
+            ts_dt: datetime = ts
             bars.append(
                 Bar(
                     symbol=_require(raw, "symbol"),
-                    timestamp=ts,
+                    timestamp=ts_dt,
                     open=float(_require(raw, "open")),
                     high=float(_require(raw, "high")),
                     low=float(_require(raw, "low")),
@@ -115,6 +124,7 @@ def _build_execution(cfg: Mapping[str, Any]) -> ImmediateExecutionHandler:
         commission=float(cfg.get("commission", 0.0)),
         partial_fill_ratio=cfg.get("partial_fill_ratio"),
         max_staleness=cfg.get("max_staleness"),
+        fill_timing=cfg.get("fill_timing", "current_close"),
     )
 
 
@@ -169,7 +179,11 @@ def _build_reporters(
     for cfg in cfgs or []:
         rep_type = _require(cfg, "type")
         if rep_type == "equity":
-            reporters.append(EquityCurveReporter(initial_cash=float(cfg.get("initial_cash", default_initial_cash))))
+            reporters.append(
+                EquityCurveReporter(
+                    initial_cash=float(cfg.get("initial_cash", default_initial_cash))
+                )
+            )
         elif rep_type == "detailed":
             reporters.append(
                 DetailedReporter(
@@ -205,8 +219,12 @@ def load_engine_from_dict(raw: Mapping[str, Any]) -> BacktestEngine:
     execution = _build_execution(_require(raw, "execution"))
 
     default_initial_cash = float(portfolio_cfg.get("initial_cash", 100_000.0))
-    risk = _build_risk_managers(raw.get("risk"), default_initial_cash=default_initial_cash)
-    reporters = _build_reporters(raw.get("reporters"), default_initial_cash=default_initial_cash)
+    risk = _build_risk_managers(
+        raw.get("risk"), default_initial_cash=default_initial_cash
+    )
+    reporters = _build_reporters(
+        raw.get("reporters"), default_initial_cash=default_initial_cash
+    )
 
     engine_cfg = EngineConfig(
         name=str(raw.get("name", "backtest")),

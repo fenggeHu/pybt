@@ -54,10 +54,7 @@ class WebSocketJSONFeed(DataFeed):
     def _resolve_loop(loop: Optional[asyncio.AbstractEventLoop]) -> tuple[asyncio.AbstractEventLoop, bool]:
         if loop is not None:
             return loop, False
-        try:
-            return asyncio.get_running_loop(), False
-        except RuntimeError:
-            return asyncio.new_event_loop(), True
+        return asyncio.new_event_loop(), True
 
     def prime(self) -> None:
         self._ticks = 0
@@ -73,6 +70,20 @@ class WebSocketJSONFeed(DataFeed):
 
     def next(self) -> None:
         # Run one WebSocket message iteration synchronously for compatibility.
+        if self.loop.is_running():
+            raise FeedError(
+                "WebSocketJSONFeed.next() cannot be called with a running event loop. "
+                "Run the feed in a dedicated thread/process, or use an async integration."
+            )
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            raise FeedError(
+                "WebSocketJSONFeed.next() cannot be called from within a running asyncio loop. "
+                "Run the feed in a dedicated thread/process, or use an async integration."
+            )
         self.loop.run_until_complete(self._next_async())
 
     async def _next_async(self) -> None:

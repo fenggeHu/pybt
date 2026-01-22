@@ -7,6 +7,7 @@ import pytest
 from pybt.core.event_bus import EventBus
 from pybt.core.events import MarketEvent
 from pybt.data.websocket_feed import WebSocketJSONFeed
+from pybt.errors import FeedError
 
 
 class _FakeWS:
@@ -23,8 +24,9 @@ class _FakeWS:
     async def recv(self) -> str:
         return json.dumps(self.payload)
 
-    def ping(self) -> None:
+    def ping(self) -> object:
         self.pings += 1
+        return None
 
 
 class _AwaitablePingWS(_FakeWS):
@@ -158,3 +160,25 @@ def test_websocket_feed_awaits_ping_coroutine():
 
     assert ws.pings == 1
     assert ws.ping_awaited is True
+
+
+def test_websocket_feed_next_fails_inside_running_loop():
+    async def _runner() -> None:
+        async def fake_connect(_url: str):
+            return _FakeWS({"price": 1.0})
+
+        feed = WebSocketJSONFeed(
+            symbol="AAA",
+            url="ws://example.com",
+            max_ticks=1,
+            connect=fake_connect,
+            backoff_seconds=0.0,
+        )
+        try:
+            feed.prime()
+            with pytest.raises(FeedError):
+                feed.next()
+        finally:
+            feed.on_stop()
+
+    asyncio.run(_runner())

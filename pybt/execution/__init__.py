@@ -2,6 +2,6 @@
 Execution handler implementations.
 """
 
-from .immediate import ImmediateExecutionHandler
+from .immediate import FillTiming, ImmediateExecutionHandler
 
-__all__ = ["ImmediateExecutionHandler"]
+__all__ = ["FillTiming", "ImmediateExecutionHandler"]

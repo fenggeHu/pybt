@@ -3,14 +3,13 @@
 import csv
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, List, Optional, Sequence
+from typing import Any, List, Optional, cast
 
 try:
     import pandas as pd  # type: ignore
 except ImportError:  # pragma: no cover - optional dependency
     pd = None
 
-from pybt.core.events import MarketEvent
 from pybt.core.interfaces import DataFeed
 from pybt.core.models import Bar
 from pybt.errors import DataError
@@ -75,31 +74,36 @@ def load_bars_from_parquet(
     end: Optional[datetime] = None,
 ) -> List[Bar]:
     """Load bars from a Parquet file with the same schema as CSV (requires pandas)."""
-    if pd is None:
-        raise ImportError("pandas is required to read Parquet files")
+    try:
+        import pandas as pd_local  # type: ignore
+    except ImportError as exc:
+        raise ImportError("pandas is required to read Parquet files") from exc
     symbol = symbol or _infer_symbol(path)
-    df = pd.read_parquet(path)  # type: ignore
+    df = cast(Any, pd_local.read_parquet(path))
     required = {"date", "open", "high", "low", "close", "volume"}
-    missing = required - set(df.columns)
+    missing = required - set(cast(Any, df).columns)
     if missing:
         raise ValueError(f"Parquet missing required columns: {missing}")
     if start is not None:
-        df = df[df["date"] >= start]
+        df = cast(Any, df)[cast(Any, df)["date"] >= start]
     if end is not None:
-        df = df[df["date"] <= end]
-    bars = [
-        Bar(
-            symbol=symbol,
-            timestamp=_parse_timestamp(str(row["date"])),
-            open=float(row["open"]),
-            high=float(row["high"]),
-            low=float(row["low"]),
-            close=float(row["close"]),
-            volume=float(row.get("volume", 0.0)),
-            amount=float(row.get("amount", 0.0)) if "amount" in row else 0.0,
+        df = cast(Any, df)[cast(Any, df)["date"] <= end]
+
+    records = cast(List[dict[str, Any]], cast(Any, df).to_dict(orient="records"))
+    bars: List[Bar] = []
+    for row in records:
+        bars.append(
+            Bar(
+                symbol=symbol,
+                timestamp=_parse_timestamp(str(row["date"])),
+                open=float(row["open"]),
+                high=float(row["high"]),
+                low=float(row["low"]),
+                close=float(row["close"]),
+                volume=float(row.get("volume", 0.0) or 0.0),
+                amount=float(row.get("amount", 0.0) or 0.0),
+            )
         )
-        for _, row in df.iterrows()
-    ]
     bars.sort(key=lambda b: b.timestamp)
     _validate_monotonic(bars, source=str(path))
     return bars
@@ -130,8 +134,8 @@ class LocalCSVBarFeed(DataFeed):
         self._start = start
         self._end = end
         self._bars: List[Bar] = self._load()
-        self._iterator: Iterator[Bar] | None = None
-        self._buffer: List[MarketEvent] = []
+        self._idx: int = 0
+        self._primed: bool = False
 
     def _load(self) -> List[Bar]:
         if self._path.suffix.lower() == ".csv":
@@ -139,23 +143,19 @@ class LocalCSVBarFeed(DataFeed):
         return load_bars_from_parquet(self._path, symbol=self._symbol, start=self._start, end=self._end)
 
     def prime(self) -> None:
-        self._iterator = iter(self._bars)
-        self._buffer.clear()
+        self._idx = 0
+        self._primed = True
 
     def has_next(self) -> bool:
-        if self._iterator is None:
+        if not self._primed:
             raise RuntimeError("Data feed not primed. Call prime() before iteration.")
-        if self._buffer:
-            return True
-        try:
-            bar = next(self._iterator)
-        except StopIteration:
-            return False
-        self._buffer.append(bar.as_event())
-        return True
+        return self._idx < len(self._bars)
 
     def next(self) -> None:
+        if not self._primed:
+            raise RuntimeError("Data feed not primed. Call prime() before iteration.")
         if not self.has_next():
             return
-        event = self._buffer.pop(0)
-        self.bus.publish(event)
+        bar = self._bars[self._idx]
+        self._idx += 1
+        self.bus.publish(bar.as_event())

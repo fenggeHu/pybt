@@ -1,6 +1,5 @@
-from typing import Iterator, List, Sequence
+from typing import List, Sequence
 
-from pybt.core.events import MarketEvent
 from pybt.core.interfaces import DataFeed
 from pybt.core.models import Bar
 from pybt.errors import DataError
@@ -15,30 +14,27 @@ class InMemoryBarFeed(DataFeed):
         super().__init__()
         self._bars: List[Bar] = sorted(bars, key=lambda bar: bar.timestamp)
         self._validate_monotonic()
-        self._iterator: Iterator[Bar] | None = None
-        self._buffer: List[MarketEvent] = []
+        self._idx: int = 0
+        self._primed: bool = False
 
     def prime(self) -> None:
-        self._iterator = iter(self._bars)
-        self._buffer.clear()
+        self._idx = 0
+        self._primed = True
 
     def has_next(self) -> bool:
-        if self._iterator is None:
+        # Pure check: no iterator consumption/prefetch.
+        if not self._primed:
             raise RuntimeError("Data feed not primed. Call prime() before iteration.")
-        if self._buffer:
-            return True
-        try:
-            bar = next(self._iterator)
-        except StopIteration:
-            return False
-        self._buffer.append(bar.as_event())
-        return True
+        return self._idx < len(self._bars)
 
     def next(self) -> None:
+        if not self._primed:
+            raise RuntimeError("Data feed not primed. Call prime() before iteration.")
         if not self.has_next():
             return
-        event = self._buffer.pop(0)
-        self.bus.publish(event)
+        bar = self._bars[self._idx]
+        self._idx += 1
+        self.bus.publish(bar.as_event())
 
     def _validate_monotonic(self) -> None:
         for i in range(1, len(self._bars)):

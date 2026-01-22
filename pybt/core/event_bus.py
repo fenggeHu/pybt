@@ -21,6 +21,10 @@ class EventBus:
         self._subscribers: MutableMapping[Type[Event], List[EventHandler]] = defaultdict(list)
         self._queue: Deque[Event] = deque()
         self._dispatching: bool = False
+        # Cache compiled handler lists per concrete event class.
+        # This preserves the current "isinstance" semantics (subclass matches),
+        # but avoids re-scanning subscriber types for every event.
+        self._handler_cache: dict[type[Event], list[EventHandler]] = {}
 
     def subscribe(self, event_type: Type[E], handler: Callable[[E], None]) -> None:
         """
@@ -28,6 +32,7 @@ class EventBus:
         """
 
         self._subscribers[event_type].append(handler)  # type: ignore[arg-type]
+        self._handler_cache.clear()
 
     def unsubscribe(self, event_type: Type[E], handler: Callable[[E], None]) -> None:
         """
@@ -41,6 +46,7 @@ class EventBus:
             handlers.remove(handler)  # type: ignore[arg-type]
         except ValueError:
             return
+        self._handler_cache.clear()
 
     def publish(self, event: Event) -> None:
         """
@@ -64,10 +70,16 @@ class EventBus:
         try:
             while self._queue:
                 event = self._queue.popleft()
-                for event_type, handlers in self._subscribers.items():
-                    if isinstance(event, event_type):
-                        for handler in list(handlers):
-                            handler(event)
+                event_cls = type(event)
+                compiled = self._handler_cache.get(event_cls)
+                if compiled is None:
+                    compiled = []
+                    for event_type, handlers in self._subscribers.items():
+                        if issubclass(event_cls, event_type):
+                            compiled.extend(list(handlers))
+                    self._handler_cache[event_cls] = compiled
+                for handler in list(compiled):
+                    handler(event)
         finally:
             self._dispatching = False
 
@@ -86,6 +98,7 @@ class EventBus:
 
         self._queue.clear()
         self._subscribers.clear()
+        self._handler_cache.clear()
 
     @property
     def pending(self) -> int:
