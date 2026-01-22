@@ -15,7 +15,7 @@ from .interfaces import (
     RiskManager,
     Strategy,
 )
-from pybt.logging import log_event
+from .logging import log_event
 
 
 @dataclass

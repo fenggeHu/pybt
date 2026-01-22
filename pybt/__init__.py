@@ -9,9 +9,9 @@ extensible component implementations. Everything re-exports here for a
 streamlined developer experience.
 """
 
-from . import analytics, core, data, execution, portfolio, risk, strategies
-from .analytics import DetailedReporter, EquityCurveReporter
-from .errors import (
+from pybt import analytics, core, data, execution, portfolio, risk, strategies
+from pybt.analytics import DetailedReporter, EquityCurveReporter
+from pybt.errors import (
     ConfigurationError,
     DataError,
     ExecutionError,
@@ -20,8 +20,8 @@ from .errors import (
     PyBTError,
     RiskError,
 )
-from .config import load_engine_from_dict, load_engine_from_json
-from .core import (
+from pybt.configuration import load_engine_from_dict, load_engine_from_json
+from pybt.core import (
     BacktestEngine,
     Bar,
     EngineConfig,
@@ -37,7 +37,7 @@ from .core import (
     SignalDirection,
     SignalEvent,
 )
-from .logging import configure_logging, log_event
+from pybt.core.logging import configure_logging, log_event
 
 __all__ = [
     "BacktestEngine",

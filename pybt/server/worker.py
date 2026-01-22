@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping
 
-from pybt.config import load_engine_from_dict
+from pybt.configuration import load_engine_from_dict
 from pybt.core.events import FillEvent, MetricsEvent
 
 

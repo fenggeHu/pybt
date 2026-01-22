@@ -7,7 +7,7 @@ from typing import Any, Mapping, Optional, cast
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
-from pybt.config import load_engine_from_dict
+from pybt.configuration import load_engine_from_dict
 
 from .config_store import ConfigNameError, ConfigStore
 from .models import (
