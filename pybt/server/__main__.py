@@ -5,14 +5,14 @@ from pathlib import Path
 
 import uvicorn
 
-from .app import create_app
-from .settings import ServerSettings
+from pybt.server.app import create_app
+from pybt.server.settings import ServerSettings
 
 
 def main() -> None:
     host = os.environ.get("PYBT_SERVER_HOST", "127.0.0.1")
     port = int(os.environ.get("PYBT_SERVER_PORT", "8765"))
-    api_key = os.environ.get("PYBT_API_KEY", "")
+    api_key = os.environ.get("PYBT_API_KEY", "123")
     if not api_key:
         raise SystemExit("PYBT_API_KEY is required")
     base_dir = Path(os.environ.get("PYBT_BASE_DIR", str(Path.home() / ".pybt")))

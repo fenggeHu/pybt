@@ -459,7 +459,7 @@ def main() -> None:
     if not token:
         raise SystemExit("TELEGRAM_BOT_TOKEN is required")
     api_base = os.environ.get("PYBT_SERVER_URL", "http://127.0.0.1:8765")
-    api_key = os.environ.get("PYBT_API_KEY", "")
+    api_key = os.environ.get("PYBT_API_KEY", "123")
     if not api_key:
         raise SystemExit("PYBT_API_KEY is required (same as server)")
 
