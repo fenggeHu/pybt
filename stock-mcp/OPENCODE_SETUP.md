@@ -3,6 +3,7 @@
 ## Configuration File
 
 The MCP configuration file has been created at:
+
 ```
 stock-mcp/mcp_config_opencode.json
 ```
@@ -14,6 +15,7 @@ stock-mcp/mcp_config_opencode.json
 Copy the content of `mcp_config_opencode.json` and add it to your OpenCode MCP configuration file.
 
 **OpenCode MCP Config Location:**
+
 - Windows: `%APPDATA%\OpenCode\User\globalStorage\mcp_config.json`
 - Example: `C:\Users\YourName\AppData\Roaming\OpenCode\User\globalStorage\mcp_config.json`
 
@@ -66,6 +68,7 @@ After configuration:
 Once configured, you can test by asking any question that requires stock analysis:
 
 Examples:
+
 - "帮我看贵州茅台最近3个月的成交量变化"
 - "筛选成交额激增超过50%的股票"
 - "分析600519和000001的交易活跃度对比"
@@ -75,12 +78,14 @@ Examples:
 ### Server won't start
 
 **Check:**
+
 1. Python is in your PATH
 2. All dependencies are installed
 3. Working directory path is correct
 4. Database directory has write permissions
 
 **Fix:**
+
 - Run `python test_server.py` to test initialization
 - Check `stock-mcp/data` directory exists
 - Ensure `stock_mcp/config.py` DB_PATH is correct
@@ -88,11 +93,13 @@ Examples:
 ### Tools not appearing
 
 **Check:**
+
 1. MCP configuration file syntax is valid JSON
 2. Server name matches exactly ("stock_mcp")
 3. Working directory points to correct path
 
 **Fix:**
+
 - Validate JSON with online tool like jsonlint.com
 - Restart OpenCode completely
 - Check OpenCode logs for errors
@@ -102,10 +109,12 @@ Examples:
 If you see import errors in OpenCode MCP logs:
 
 **Possible causes:**
+
 - Dependencies not installed in Python environment
 - Path issues with module imports
 
 **Fix:**
+
 ```bash
 cd stock-mcp
 pip install -e .
@@ -130,5 +139,6 @@ python -c "from stock_mcp import *; from stock_mcp.cache import StockDataCache; 
 5. Start using stock analysis capabilities!
 
 For more information, see:
+
 - `QUICKSTART.md` - Quick start guide
 - `USAGE.md` - Detailed tool documentation

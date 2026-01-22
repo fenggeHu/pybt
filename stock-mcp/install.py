@@ -6,6 +6,7 @@ Installation script for stock-mcp server.
 import subprocess
 import sys
 
+
 def install_dependencies():
     """Install required dependencies."""
     print("Installing stock-mcp dependencies...")
@@ -26,6 +27,7 @@ def install_dependencies():
     print("\n✅ All dependencies installed successfully!")
     print("\nYou can now run the server with:")
     print("  python -m stock_mcp")
+
 
 if __name__ == "__main__":
     try:

@@ -3,13 +3,10 @@ Data fetcher using AKShare API.
 """
 
 import asyncio
-import pandas as pd
-from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import List, Dict
 
 import akshare as ak
-
-from stock_mcp import config
+import pandas as pd
 
 
 class StockDataFetcher:
@@ -26,10 +23,10 @@ class StockDataFetcher:
 
     @staticmethod
     async def get_stock_history(
-        symbol: str,
-        start_date: str,
-        end_date: str,
-        adjust: str = "hfq"
+            symbol: str,
+            start_date: str,
+            end_date: str,
+            adjust: str = "hfq"
     ) -> pd.DataFrame:
         """
         Get historical data for a stock.
@@ -57,11 +54,11 @@ class StockDataFetcher:
 
     @staticmethod
     async def batch_get_history(
-        symbols: List[str],
-        start_date: str,
-        end_date: str,
-        adjust: str = "hfq",
-        delay: float = 1.0
+            symbols: List[str],
+            start_date: str,
+            end_date: str,
+            adjust: str = "hfq",
+            delay: float = 1.0
     ) -> Dict[str, pd.DataFrame]:
         """
         Batch fetch historical data for multiple stocks.

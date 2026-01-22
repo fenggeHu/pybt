@@ -3,12 +3,11 @@ SQLite-based cache for stock data.
 """
 
 import sqlite3
-import pandas as pd
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
-from stock_mcp import config
+import pandas as pd
 
 
 class StockDataCache:
@@ -78,7 +77,7 @@ class StockDataCache:
 
         # Ensure required columns exist
         required_cols = ['symbol', 'date', 'open', 'high', 'low', 'close',
-                       'volume', 'amount', 'pct_change', 'turnover']
+                         'volume', 'amount', 'pct_change', 'turnover']
         for col in required_cols:
             if col not in df.columns:
                 df[col] = None
@@ -96,14 +95,14 @@ class StockDataCache:
 
             # Insert new data
             df[required_cols].to_sql('stock_history', conn, if_exists='append',
-                                  index=False)
+                                     index=False)
             conn.commit()
 
     def get_stock_history(
-        self,
-        symbol: str,
-        start_date: str,
-        end_date: str
+            self,
+            symbol: str,
+            start_date: str,
+            end_date: str
     ) -> Optional[pd.DataFrame]:
         """Get stock history from cache."""
         with sqlite3.connect(self.db_path) as conn:

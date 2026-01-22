@@ -3,9 +3,9 @@
 Comprehensive test of all stock-mcp tools.
 """
 
+import asyncio
 import json
 import sys
-import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -273,7 +273,7 @@ async def test_all_tools():
     print(f"Total Tools:  {results['total_tools']}")
     print(f"Passed:       {results['passed']}")
     print(f"Failed:       {results['failed']}")
-    print(f"Success Rate: {results['passed']}/{results['total_tools']} ({100*results['passed']/results['total_tools']:.1f}%)")
+    print(f"Success Rate: {results['passed']}/{results['total_tools']} ({100 * results['passed'] / results['total_tools']:.1f}%)")
     print()
 
     # Print detailed results
@@ -296,4 +296,5 @@ async def test_all_tools():
 if __name__ == "__main__":
     success = asyncio.run(test_all_tools())
     import sys
+
     sys.exit(0 if success else 1)

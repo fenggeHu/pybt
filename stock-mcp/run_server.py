@@ -3,8 +3,8 @@
 MCP server entry point that works with stdio transport.
 """
 
-import sys
 import os
+import sys
 
 # Get current directory
 current_dir = os.path.dirname(os.path.abspath(__file__))

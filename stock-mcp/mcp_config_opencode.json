@@ -2,7 +2,10 @@
   "mcpServers": {
     "stock_mcp": {
       "command": "python",
-      "args": ["-c", "import sys; sys.path.insert(0, 'E:\\\\opencode\\\\aaa\\\\stock-mcp'); from stock_mcp import main; main()"],
+      "args": [
+        "-c",
+        "import sys; sys.path.insert(0, 'E:\\\\opencode\\\\aaa\\\\stock-mcp'); from stock_mcp import main; main()"
+      ],
       "cwd": "E:\\opencode\\aaa\\stock-mcp"
     }
   }

@@ -2,8 +2,8 @@
 Test script to verify stock-mcp installation.
 """
 
-import sys
 import asyncio
+import sys
 from pathlib import Path
 
 # Add parent directory to path

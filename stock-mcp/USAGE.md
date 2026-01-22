@@ -40,7 +40,10 @@ python -m stock_mcp --transport http --port 8000
   "mcpServers": {
     "stock_mcp": {
       "command": "python",
-      "args": ["-m", "stock_mcp"]
+      "args": [
+        "-m",
+        "stock_mcp"
+      ]
     }
   }
 }
@@ -62,12 +65,15 @@ python -m stock_mcp --transport http --port 8000
 ## 可用工具
 
 ### 1. get_stock_list
+
 获取所有A股股票列表
 
 **参数：**
+
 - `force_refresh` (bool, 可选): 强制从API刷新，即使缓存是最新的
 
 **示例：**
+
 ```json
 {
   "force_refresh": false
@@ -75,9 +81,11 @@ python -m stock_mcp --transport http --port 8000
 ```
 
 ### 2. get_stock_history
+
 获取单只股票的历史数据
 
 **参数：**
+
 - `symbol` (string, 必需): 股票代码 (如 "600519", "000001")
 - `start_date` (string, 必需): 开始日期，格式 "YYYYMMDD" (如 "20240101")
 - `end_date` (string, 必需): 结束日期，格式 "YYYYMMDD" (如 "20241231")
@@ -85,6 +93,7 @@ python -m stock_mcp --transport http --port 8000
 - `force_refresh` (bool, 可选): 强制从API获取，即使缓存中已有
 
 **示例：**
+
 ```json
 {
   "symbol": "600519",
@@ -96,9 +105,11 @@ python -m stock_mcp --transport http --port 8000
 ```
 
 ### 3. analyze_volume_surge
+
 分析股票的成交量激增情况
 
 **参数：**
+
 - `symbol` (string, 必需): 股票代码
 - `start_date` (string, 必需): 开始日期
 - `end_date` (string, 必需): 结束日期
@@ -107,24 +118,30 @@ python -m stock_mcp --transport http --port 8000
 - `force_refresh` (bool, 可选): 强制刷新
 
 **返回：**
+
 - volume_growth_rate: 成交量增长率 (%)
 - amount_growth_rate: 成交额增长率 (%)
 - recent_avg_volume: 最近平均成交量
 - compare_avg_volume: 对比期平均成交量
 
 ### 4. analyze_amount_surge
+
 分析股票的成交额激增情况
 
 **参数：**
+
 - 与 analyze_volume_surge 相同
 
 **返回：**
+
 - 重点显示成交额增长率
 
 ### 5. screen_stocks
+
 根据条件筛选股票
 
 **参数：**
+
 - `start_date` (string, 必需): 开始日期
 - `end_date` (string, 必需): 结束日期
 - `criterion` (string, 可选): 筛选条件 ("volume_surge" 或 "amount_surge", 默认: "volume_surge")
@@ -135,17 +152,21 @@ python -m stock_mcp --transport http --port 8000
 - `force_refresh` (bool, 可选): 强制刷新
 
 **返回：**
+
 - 符合条件的股票列表，按增长率排序
 
 ### 6. update_cache
+
 更新本地数据缓存
 
 **参数：**
+
 - `symbols` (string, 可选): 逗号分隔的股票代码 (如 "600519,000001")，如果为None则更新列表中的所有股票
 - `start_date` (string, 必需): 开始日期
 - `end_date` (string, 必需): 结束日期
 
 **示例：**
+
 ```json
 {
   "symbols": "600519,000001",
@@ -155,12 +176,15 @@ python -m stock_mcp --transport http --port 8000
 ```
 
 ### 7. get_cache_status
+
 获取缓存状态和统计信息
 
 **参数：**
+
 - `detailed` (bool, 可选): 是否返回详细信息 (默认: false)
 
 **返回：**
+
 - cached_stocks: 已缓存的股票数量
 - stock_list_count: 股票列表中的股票数量
 - date_range: 数据日期范围 (详细模式)
@@ -213,6 +237,7 @@ get_stock_history(
 服务器使用SQLite数据库缓存数据，路径为：`data/cache.db`
 
 缓存策略：
+
 - 股票列表缓存1天
 - 历史数据永久缓存（可手动刷新）
 - 增量更新：仅获取新的交易日数据
@@ -227,18 +252,23 @@ get_stock_history(
 ## 故障排除
 
 ### 导入错误
+
 如果遇到 "No module named 'mcp'" 错误：
+
 ```bash
 pip install mcp
 ```
 
 ### AKShare安装错误
+
 ```bash
 pip install akshare pandas numpy
 ```
 
 ### 数据库错误
+
 确保 `data` 目录存在且可写：
+
 ```bash
 mkdir -p data
 ```

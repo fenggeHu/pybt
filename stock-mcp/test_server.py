@@ -12,6 +12,7 @@ print("Testing MCP server initialization...")
 
 try:
     from mcp.server.fastmcp import FastMCP
+
     print("[OK] MCP SDK imported")
 
     mcp = FastMCP(
@@ -22,9 +23,11 @@ try:
 
     # Check if tools can be registered
     from stock_mcp import config
+
     print("[OK] Config imported")
 
     from stock_mcp.cache import StockDataCache
+
     cache = StockDataCache(db_path=config.DB_PATH)
     print("[OK] Cache initialized")
 
@@ -36,5 +39,6 @@ try:
 except Exception as e:
     print(f"[FAIL] Error: {e}")
     import traceback
+
     traceback.print_exc()
     sys.exit(1)

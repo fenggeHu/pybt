@@ -140,17 +140,17 @@ python test_installation.py
 
 All settings are in `stock_mcp/config.py`:
 
-| Setting | Description | Default |
-|---------|-------------|----------|
-| `DB_PATH` | SQLite database path | `data/cache.db` |
-| `CACHE_DAYS` | Stock list cache freshness (days) | `1` |
-| `DEFAULT_START_DATE_OFFSET` | Default days to fetch | `90` |
-| `DEFAULT_VOLUME_THRESHOLD` | Volume growth threshold (%) | `50.0` |
-| `DEFAULT_AMOUNT_THRESHOLD` | Amount growth threshold (%) | `50.0` |
-| `DEFAULT_RECENT_DAYS` | Recent days for analysis | `3` |
-| `DEFAULT_COMPARE_PERIOD` | Comparison period (days) | `20` |
-| `MAX_RETRIES` | Max retry attempts | `3` |
-| `REQUEST_DELAY` | Delay between requests (seconds) | `1` |
+| Setting                     | Description                       | Default         |
+|-----------------------------|-----------------------------------|-----------------|
+| `DB_PATH`                   | SQLite database path              | `data/cache.db` |
+| `CACHE_DAYS`                | Stock list cache freshness (days) | `1`             |
+| `DEFAULT_START_DATE_OFFSET` | Default days to fetch             | `90`            |
+| `DEFAULT_VOLUME_THRESHOLD`  | Volume growth threshold (%)       | `50.0`          |
+| `DEFAULT_AMOUNT_THRESHOLD`  | Amount growth threshold (%)       | `50.0`          |
+| `DEFAULT_RECENT_DAYS`       | Recent days for analysis          | `3`             |
+| `DEFAULT_COMPARE_PERIOD`    | Comparison period (days)          | `20`            |
+| `MAX_RETRIES`               | Max retry attempts                | `3`             |
+| `REQUEST_DELAY`             | Delay between requests (seconds)  | `1`             |
 
 ### Customizing Configuration
 
@@ -233,9 +233,9 @@ python run_server.py --transport http --port 8000
 
 1. **Stop OpenCode** if running
 2. **Locate** your MCP configuration file:
-   - Windows: `%APPDATA%\OpenCode\User\globalStorage\mcp_config.json`
-   - macOS: `~/Library/Application Support/OpenCode/User/globalStorage/mcp_config.json`
-   - Linux: `~/.config/OpenCode/User/globalStorage/mcp_config.json`
+    - Windows: `%APPDATA%\OpenCode\User\globalStorage\mcp_config.json`
+    - macOS: `~/Library/Application Support/OpenCode/User/globalStorage/mcp_config.json`
+    - Linux: `~/.config/OpenCode/User/globalStorage/mcp_config.json`
 3. **Edit** the file (create if doesn't exist)
 4. **Add** the configuration from Method 1, 2, or 3
 5. **Save** the file
@@ -251,6 +251,7 @@ python run_server.py --transport http --port 8000
 Get all A-share stocks from cache or API.
 
 **Parameters**:
+
 ```python
 {
   "force_refresh": False  # Force refresh from API
@@ -258,6 +259,7 @@ Get all A-share stocks from cache or API.
 ```
 
 **Returns**:
+
 ```json
 {
   "source": "cache",  # or "api"
@@ -275,6 +277,7 @@ Get all A-share stocks from cache or API.
 Get historical OHLCV data for a specific stock.
 
 **Parameters**:
+
 ```python
 {
   "symbol": "600519",  # Stock code (e.g., Kweichow Moutai)
@@ -286,6 +289,7 @@ Get historical OHLCV data for a specific stock.
 ```
 
 **Returns**:
+
 ```json
 {
   "source": "api",
@@ -304,6 +308,7 @@ Get historical OHLCV data for a specific stock.
 Analyze volume surge patterns for a stock.
 
 **Parameters**:
+
 ```python
 {
   "symbol": "600519",
@@ -316,6 +321,7 @@ Analyze volume surge patterns for a stock.
 ```
 
 **Returns**:
+
 ```json
 {
   "symbol": "600519",
@@ -340,6 +346,7 @@ Analyze trading amount surge patterns (same as volume surge but focused on amoun
 **Parameters**: Same as `analyze_volume_surge`
 
 **Returns**:
+
 ```json
 {
   "symbol": "600519",
@@ -356,6 +363,7 @@ Analyze trading amount surge patterns (same as volume surge but focused on amoun
 Screen stocks based on volume or amount surge criteria.
 
 **Parameters**:
+
 ```python
 {
   "start_date": "20241001",
@@ -370,6 +378,7 @@ Screen stocks based on volume or amount surge criteria.
 ```
 
 **Returns**:
+
 ```json
 {
   "criterion": "amount_surge",
@@ -389,6 +398,7 @@ Screen stocks based on volume or amount surge criteria.
 Update local cache with fresh stock data.
 
 **Parameters**:
+
 ```python
 {
   "symbols": "600519,000001",  # Comma-separated codes, or null for all
@@ -398,6 +408,7 @@ Update local cache with fresh stock data.
 ```
 
 **Returns**:
+
 ```json
 {
   "total": 2,      # Total symbols to update
@@ -416,6 +427,7 @@ Update local cache with fresh stock data.
 Get current cache status and statistics.
 
 **Parameters**:
+
 ```python
 {
   "detailed": True  # Return detailed stats (default: false)
@@ -423,6 +435,7 @@ Get current cache status and statistics.
 ```
 
 **Returns** (basic mode):
+
 ```json
 {
   "cached_stocks": 1250,
@@ -431,6 +444,7 @@ Get current cache status and statistics.
 ```
 
 **Returns** (detailed mode):
+
 ```json
 {
   "cached_stocks": 1250,
@@ -455,11 +469,13 @@ Get current cache status and statistics.
 **Objective**: Identify stocks with unusually high trading activity
 
 **User Query**:
+
 ```
 "帮我找出最近3天成交额较过去有较大增长的股票"
 ```
 
 **Agent Workflow**:
+
 1. Call `get_stock_list()` to get available stocks
 2. Call `screen_stocks()` with:
    ```python
@@ -481,11 +497,13 @@ Get current cache status and statistics.
 **Objective**: Detailed analysis of a single stock
 
 **User Query**:
+
 ```
 "分析贵州茅台(600519)最近3个月的交易活跃度"
 ```
 
 **Agent Workflow**:
+
 1. Call `get_stock_history()` for stock 600519
 2. Call `analyze_volume_surge()` to check volume surge
 3. Call `analyze_amount_surge()` to check amount surge
@@ -499,11 +517,13 @@ Get current cache status and statistics.
 **Objective**: Ensure latest data for frequently analyzed stocks
 
 **User Query**:
+
 ```
 "更新贵州茅台、工商银行、中国平安的数据"
 ```
 
 **Agent Workflow**:
+
 1. Call `update_cache()` with symbols:
    ```python
    {
@@ -523,11 +543,13 @@ Get current cache status and statistics.
 **Objective**: Get overall market information
 
 **User Query**:
+
 ```
 "获取A股市场概况"
 ```
 
 **Agent Workflow**:
+
 1. Call `get_stock_list()` to get all stocks
 2. Call `get_cache_status(detailed=True)` to see cached data
 3. Provide summary of market size and cache coverage
@@ -555,15 +577,15 @@ python test_all_tools.py
 
 All tests passed with **100% success rate**:
 
-| Tool | Status | Test Result |
-|-------|--------|-------------|
-| get_stock_list | ✅ PASS | Fetched 5800 stocks |
-| get_stock_history | ✅ PASS | Fetched 63 days of data |
-| analyze_volume_surge | ✅ PASS | Volume growth: +59.52% |
-| analyze_amount_surge | ✅ PASS | Amount growth: +37.07% |
-| screen_stocks | ✅ PASS | Screening logic tested |
-| update_cache | ✅ PASS | Updated 2 stocks |
-| get_cache_status | ✅ PASS | Cache stats retrieved |
+| Tool                 | Status | Test Result             |
+|----------------------|--------|-------------------------|
+| get_stock_list       | ✅ PASS | Fetched 5800 stocks     |
+| get_stock_history    | ✅ PASS | Fetched 63 days of data |
+| analyze_volume_surge | ✅ PASS | Volume growth: +59.52%  |
+| analyze_amount_surge | ✅ PASS | Amount growth: +37.07%  |
+| screen_stocks        | ✅ PASS | Screening logic tested  |
+| update_cache         | ✅ PASS | Updated 2 stocks        |
+| get_cache_status     | ✅ PASS | Cache stats retrieved   |
 
 **Total**: 7/7 tools tested successfully
 
@@ -585,6 +607,7 @@ All tests passed with **100% success rate**:
 **Error**: `ModuleNotFoundError: No module named 'mcp'`
 
 **Solution**:
+
 ```bash
 pip install mcp akshare pandas numpy pydantic httpx
 ```
@@ -594,11 +617,13 @@ pip install mcp akshare pandas numpy pydantic httpx
 **Error**: `RuntimeError: Failed to fetch stock list`
 
 **Possible Causes**:
+
 - Network connectivity issues
 - AKShare API temporarily unavailable
 - Rate limiting triggered
 
 **Solutions**:
+
 - Check internet connection
 - Wait a few minutes and retry
 - Reduce request frequency (built-in 1s delay)
@@ -609,6 +634,7 @@ pip install mcp akshare pandas numpy pydantic httpx
 **Error**: `sqlite3.OperationalError: unable to open database file`
 
 **Solutions**:
+
 ```bash
 # Ensure data directory exists
 mkdir -p stock-mcp/data
@@ -624,10 +650,12 @@ rm stock-mcp/data/cache.db
 #### Issue 4: OpenCode MCP Not Connecting
 
 **Symptoms**:
+
 - Server appears in MCP list but shows "Disconnected"
 - Tools not available when querying
 
 **Troubleshooting Steps**:
+
 1. **Verify server is running**:
    ```bash
    python run_server.py
@@ -642,6 +670,7 @@ rm stock-mcp/data/cache.db
 **Symptoms**: Slow queries, high disk usage
 
 **Solutions**:
+
 ```bash
 # Clear old cache
 rm stock-mcp/data/cache.db
@@ -716,9 +745,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Data Source and Disclaimer
 
-**Data Source**: This server uses [AKShare](https://github.com/akfamily/akshare) to fetch stock data from Eastmoney (东方财富网).
+**Data Source**: This server uses [AKShare](https://github.com/akfamily/akshare) to fetch stock data from Eastmoney (
+东方财富网).
 
-**Disclaimer**: This tool is for educational and research purposes only. It does not constitute investment advice. Stock market trading involves risk. Please consult a qualified financial advisor before making investment decisions.
+**Disclaimer**: This tool is for educational and research purposes only. It does not constitute investment advice. Stock
+market trading involves risk. Please consult a qualified financial advisor before making investment decisions.
 
 ---
 
@@ -739,10 +770,10 @@ For issues, questions, or suggestions:
 1. Check existing [Documentation](#documentation) first
 2. Search for similar issues in the project repository
 3. Create a new issue with:
-   - Clear description of the problem
-   - Steps to reproduce
-   - Expected vs actual behavior
-   - Environment details (OS, Python version)
+    - Clear description of the problem
+    - Steps to reproduce
+    - Expected vs actual behavior
+    - Environment details (OS, Python version)
 
 ---
 

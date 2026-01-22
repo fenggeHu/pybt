@@ -6,8 +6,9 @@ MCP server for Chinese A-share stock data analysis using AKShare.
 
 from mcp.server.fastmcp import FastMCP
 
-from stock_mcp import config
-from stock_mcp.tools import (
+from . import config
+from .cache import StockDataCache
+from .tools import (
     register_get_stock_list,
     register_get_stock_history,
     register_analyze_volume_surge,
@@ -16,7 +17,6 @@ from stock_mcp.tools import (
     register_update_cache,
     register_get_cache_status,
 )
-from stock_mcp.cache import StockDataCache
 
 # Initialize MCP server
 mcp = FastMCP(

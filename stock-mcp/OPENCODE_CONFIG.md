@@ -32,11 +32,13 @@ This is an example configuration for adding stock-mcp to OpenCode.
 ## Configuration Options
 
 ### stdio Mode
+
 - `command`: Python executable path
 - `args`: Arguments to pass (use `-m stock_mcp`)
 - `cwd`: Working directory (path to stock-mcp folder)
 
 ### HTTP Mode
+
 - `transport`: Must be "http"
 - `url`: Server URL (http://localhost:8000/mcp)
 - `port`: Port number (must match server --port argument)
@@ -44,6 +46,7 @@ This is an example configuration for adding stock-mcp to OpenCode.
 ## Location
 
 This file should be placed in your OpenCode configuration directory:
+
 - Windows: `%APPDATA%\OpenCode\User\globalStorage\mcp_config.json`
 - macOS: `~/Library/Application Support/OpenCode/User/globalStorage/mcp_config.json`
 - Linux: `~/.config/OpenCode/User/globalStorage/mcp_config.json`

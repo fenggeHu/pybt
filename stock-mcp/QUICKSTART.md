@@ -75,12 +75,15 @@ python -m stock_mcp --transport http --port 8000
 ## 🛠️ 可用工具
 
 ### 1. get_stock_list
+
 获取所有A股股票列表
 
 **参数**:
+
 - `force_refresh` (bool, 可选): 强制从API刷新
 
 **返回**:
+
 ```json
 {
   "source": "cache",
@@ -90,9 +93,11 @@ python -m stock_mcp --transport http --port 8000
 ```
 
 ### 2. get_stock_history
+
 获取单只股票历史数据
 
 **参数**:
+
 - `symbol` (string, 必需): 股票代码，如 "600519"
 - `start_date` (string, 必需): 开始日期 "YYYYMMDD"
 - `end_date` (string, 必需): 结束日期 "YYYYMMDD"
@@ -100,6 +105,7 @@ python -m stock_mcp --transport http --port 8000
 - `force_refresh` (bool, 可选): 强制刷新
 
 **返回**:
+
 ```json
 {
   "source": "api",
@@ -110,9 +116,11 @@ python -m stock_mcp --transport http --port 8000
 ```
 
 ### 3. analyze_volume_surge
+
 分析成交量激增
 
 **参数**:
+
 - `symbol` (string, 必需): 股票代码
 - `start_date` (string, 必需): 开始日期
 - `end_date` (string, 必需): 结束日期
@@ -121,6 +129,7 @@ python -m stock_mcp --transport http --port 8000
 - `force_refresh` (bool, 可选): 强制刷新
 
 **返回**:
+
 ```json
 {
   "symbol": "600519",
@@ -132,14 +141,17 @@ python -m stock_mcp --transport http --port 8000
 ```
 
 ### 4. analyze_amount_surge
+
 分析成交额激增
 
 参数与 analyze_volume_surge 相同
 
 ### 5. screen_stocks
+
 筛选股票
 
 **参数**:
+
 - `start_date` (string, 必需): 开始日期
 - `end_date` (string, 必需): 结束日期
 - `criterion` (string, 可选): "volume_surge" 或 "amount_surge"
@@ -149,6 +161,7 @@ python -m stock_mcp --transport http --port 8000
 - `limit` (int, 可选): 返回数量限制，默认20
 
 **返回**:
+
 ```json
 {
   "criterion": "amount_surge",
@@ -167,17 +180,21 @@ python -m stock_mcp --transport http --port 8000
 ```
 
 ### 6. update_cache
+
 更新本地缓存
 
 **参数**:
+
 - `symbols` (string, 可选): 逗号分隔的股票代码
 - `start_date` (string, 必需): 开始日期
 - `end_date` (string, 必需): 结束日期
 
 ### 7. get_cache_status
+
 获取缓存状态
 
 **参数**:
+
 - `detailed` (bool, 可选): 是否返回详细信息
 
 ---
@@ -236,16 +253,19 @@ update_cache(
 ## 💡 最佳实践
 
 ### 1. 数据缓存策略
+
 - 股票列表缓存1天，避免频繁请求
 - 历史数据永久缓存，节省带宽
 - 定期使用 `update_cache` 更新最新数据
 
 ### 2. 性能优化
+
 - 批量操作前先更新缓存
 - 使用合理的 `limit` 参数限制结果数量
 - 首次使用后，后续查询从缓存读取，速度极快
 
 ### 3. 参数选择建议
+
 - `recent_days`: 通常使用 3-5 天
 - `compare_period`: 使用 20-60 天的移动平均
 - `threshold`: 成交量/额激增建议 50%-200%
@@ -278,31 +298,41 @@ stock-mcp/
 ## 🔍 故障排除
 
 ### 问题1: 导入错误
+
 ```
 No module named 'mcp'
 ```
+
 **解决**:
+
 ```bash
 pip install mcp akshare pandas numpy pydantic httpx
 ```
 
 ### 问题2: AKShare连接失败
+
 **解决**:
+
 - 检查网络连接
 - AKShare可能需要等待一段时间重试
 - 确保没有触发反爬机制（内置了延迟）
 
 ### 问题3: 数据库错误
+
 ```
 sqlite3.OperationalError: unable to open database file
 ```
+
 **解决**:
+
 ```bash
 mkdir -p data
 ```
 
 ### 问题4: 配置后OpenCode看不到MCP服务器
+
 **解决**:
+
 - 确保服务器正在运行
 - 检查配置文件路径是否正确
 - 重启OpenCode
@@ -348,6 +378,7 @@ MIT License
 ## 🤝 支持
 
 如有问题，请查看：
+
 1. 本项目的README和文档
 2. [AKShare官方文档](https://akshare.akfamily.xyz/)
 3. [MCP协议文档](https://modelcontextprotocol.io/)

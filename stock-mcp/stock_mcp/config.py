@@ -3,7 +3,6 @@ Configuration settings for the Stock MCP server.
 """
 
 from pathlib import Path
-import os
 
 # Base directory
 BASE_DIR = Path(__file__).parent.parent

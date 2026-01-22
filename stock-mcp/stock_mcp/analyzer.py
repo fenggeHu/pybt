@@ -2,9 +2,9 @@
 Stock analysis utilities.
 """
 
+from typing import Optional, Dict
+
 import pandas as pd
-import numpy as np
-from typing import Optional, Dict, List
 
 
 class StockAnalyzer:
@@ -12,9 +12,9 @@ class StockAnalyzer:
 
     @staticmethod
     def calculate_volume_growth(
-        df: pd.DataFrame,
-        recent_days: int = 3,
-        compare_period_days: int = 20
+            df: pd.DataFrame,
+            recent_days: int = 3,
+            compare_period_days: int = 20
     ) -> Optional[Dict]:
         """
         Calculate volume growth rate.
@@ -59,9 +59,9 @@ class StockAnalyzer:
 
     @staticmethod
     def calculate_amount_growth(
-        df: pd.DataFrame,
-        recent_days: int = 3,
-        compare_period_days: int = 20
+            df: pd.DataFrame,
+            recent_days: int = 3,
+            compare_period_days: int = 20
     ) -> Optional[Dict]:
         """Calculate trading amount growth rate."""
         # Similar to calculate_volume_growth but focused on amount
@@ -71,9 +71,9 @@ class StockAnalyzer:
 
     @staticmethod
     def find_surge_events(
-        df: pd.DataFrame,
-        threshold: float = 2.0,
-        window: int = 20
+            df: pd.DataFrame,
+            threshold: float = 2.0,
+            window: int = 20
     ) -> pd.DataFrame:
         """
         Find volume surge events.
@@ -97,8 +97,8 @@ class StockAnalyzer:
 
     @staticmethod
     def analyze_price_trend(
-        df: pd.DataFrame,
-        days: int = 5
+            df: pd.DataFrame,
+            days: int = 5
     ) -> Optional[Dict]:
         """
         Analyze price trend.
