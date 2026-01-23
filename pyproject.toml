@@ -9,6 +9,10 @@ description = "Modular event-driven backtesting framework"
 requires-python = ">=3.10"
 dependencies = []
 
+[project.scripts]
+pybt-server = "apps.server.__main__:main"
+pybt-bot = "apps.telegram_bot.telegram_bot:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
@@ -37,7 +41,7 @@ app = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["pybt*"]
+include = ["pybt*", "apps*"]
 exclude = ["tests*", "third_party*"]
 
 [tool.black]

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import uvicorn
 
-from pybt.server.app import create_app
-from pybt.server.settings import ServerSettings
+from apps.server.app import create_app
+from apps.server.settings import ServerSettings
 
 
 def main() -> None:

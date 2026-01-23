@@ -18,6 +18,8 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .[dev]
 # 可选依赖：pip install -e .[data]  # pandas
 # 可选依赖：pip install -e .[realtime]  # adata（实时行情）
+# 可选依赖：pip install -e .[server]  # HTTP API
+# 可选依赖：pip install -e .[app]  # Telegram bot
 pytest -q
 ```
 
@@ -48,6 +50,31 @@ engine.run()
 ----------
 ```bash
 python -m pybt --config ./config.json --log-level INFO --json-logs
+```
+
+HTTP API 服务
+-------------
+```bash
+# 需要安装 server 依赖
+pip install -e .[server]
+
+# 必需环境变量：PYBT_API_KEY
+export PYBT_API_KEY=your_key
+pybt-server
+```
+
+Telegram Bot
+------------
+```bash
+# 需要安装 app 依赖
+pip install -e .[app]
+
+# 必需环境变量：TELEGRAM_BOT_TOKEN、TELEGRAM_ADMIN_PASSWORD
+# 同时需要 PYBT_API_KEY 与服务端一致
+export TELEGRAM_BOT_TOKEN=your_token
+export TELEGRAM_ADMIN_PASSWORD=your_password
+export PYBT_API_KEY=your_key
+pybt-bot
 ```
 
 快速开始
@@ -87,6 +114,7 @@ engine.run()
 
 项目结构
 --------
+- `apps/`: 应用层入口（`server`、`telegram_bot`）。
 - `core/`: 引擎、事件、事件总线、接口、基础模型与枚举。
 - `data/`: 内存/CSV/Parquet/AData 数据源。
 - `strategies/`: 示例策略（移动均线、上升突破）。
