@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from pybt.configuration import load_engine_from_dict
-from pybt.core.events import FillEvent, MetricsEvent
+from pybt.core.events import FillEvent, MetricsEvent, SignalEvent
+from pybt.live.bridge import build_signal_notification_event
 
 
 def _dt_to_iso(dt: datetime) -> str:
@@ -30,21 +31,39 @@ def _serialize_event(event: object) -> tuple[str, str, dict[str, Any]]:
     return event_type, ts, data
 
 
-def run_worker(run_id: str, config: Mapping[str, Any], run_dir_str: str, event_q: Any) -> None:
+def run_worker(
+    run_id: str, config: Mapping[str, Any], run_dir_str: str, event_q: Any
+) -> None:
     run_dir = Path(run_dir_str)
     try:
         engine = load_engine_from_dict(config)
 
         def on_fill(ev: FillEvent) -> None:
             et, ts, data = _serialize_event(ev)
-            event_q.put({"kind": "event", "event_type": et, "timestamp": ts, "data": data})
+            event_q.put(
+                {"kind": "event", "event_type": et, "timestamp": ts, "data": data}
+            )
 
         def on_metrics(ev: MetricsEvent) -> None:
             et, ts, data = _serialize_event(ev)
-            event_q.put({"kind": "event", "event_type": et, "timestamp": ts, "data": data})
+            event_q.put(
+                {"kind": "event", "event_type": et, "timestamp": ts, "data": data}
+            )
+
+        def on_signal(ev: SignalEvent) -> None:
+            out = build_signal_notification_event(run_id=run_id, event=ev)
+            event_q.put(
+                {
+                    "kind": "event",
+                    "event_type": out["event_type"],
+                    "timestamp": out["timestamp"],
+                    "data": out["data"],
+                }
+            )
 
         engine.bus.subscribe(FillEvent, on_fill)
         engine.bus.subscribe(MetricsEvent, on_metrics)
+        engine.bus.subscribe(SignalEvent, on_signal)
 
         engine.run()
 

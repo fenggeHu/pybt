@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import httpx
+from pybt.live.notify import NotificationOutbox, OutboxNotifierWorker
 
 # Telegram is an optional dependency. We import it at runtime in main() so that
 # `import pybt` and `pytest` work without the app extras installed.
@@ -101,7 +102,14 @@ def _format_summary_response(resp: Any) -> str:
         return _fmt_short(summary)
 
     # Highlight a few common metrics first.
-    highlight_keys = ["equity", "cash", "max_drawdown", "total_trades", "sharpe", "return"]
+    highlight_keys = [
+        "equity",
+        "cash",
+        "max_drawdown",
+        "total_trades",
+        "sharpe",
+        "return",
+    ]
     lines: list[str] = []
     for k in highlight_keys:
         if k in summary:
@@ -157,7 +165,9 @@ async def _api(
 ) -> Any:
     url = state.api_base.rstrip("/") + path
     headers = {"X-API-Key": state.api_key}
-    resp = await client.request(method, url, headers=headers, json=json_body, timeout=30)
+    resp = await client.request(
+        method, url, headers=headers, json=json_body, timeout=30
+    )
     # server returns ok=false for HTTPException too; prefer status for flow.
     if resp.status_code >= 400:
         raise RuntimeError(f"HTTP {resp.status_code}: {resp.text}")
@@ -211,9 +221,9 @@ async def cmd_help(update: Any, context: Any) -> None:
     text = "\n".join(
         [
             "Commands:",
-            "/configs - list configs", 
-            "/run - upload config.json or paste JSON", 
-            "/runs - list runs", 
+            "/configs - list configs",
+            "/run - upload config.json or paste JSON",
+            "/runs - list runs",
             "/status <run_id>",
             "/summary <run_id>",
             "/stop <run_id>",
@@ -364,7 +374,9 @@ async def on_button(update: Any, context: Any) -> None:
         await query.edit_message_text(text=text, reply_markup=_inline_menu_markup())
         return
 
-    if data in {"menu:runs", "menu:configs"} and not _require_auth_for_callback(state, update):
+    if data in {"menu:runs", "menu:configs"} and not _require_auth_for_callback(
+        state, update
+    ):
         await query.answer("Please /login in private chat first", show_alert=True)
         return
 
@@ -402,7 +414,9 @@ async def _button_show_runs(query: Any, context: Any, state: BotState) -> None:
         data = await _api(client, state, "GET", "/runs")
     runs = data.get("runs", [])
     if not isinstance(runs, list) or not runs:
-        await query.edit_message_text(text="No runs", reply_markup=_inline_menu_markup())
+        await query.edit_message_text(
+            text="No runs", reply_markup=_inline_menu_markup()
+        )
         return
 
     # Cache runs in user_data to keep callback_data small.
@@ -434,7 +448,9 @@ async def _button_show_configs(query: Any, context: Any, state: BotState) -> Non
         data = await _api(client, state, "GET", "/configs")
     items = data.get("configs", [])
     if not isinstance(items, list) or not items:
-        await query.edit_message_text(text="No configs", reply_markup=_inline_menu_markup())
+        await query.edit_message_text(
+            text="No configs", reply_markup=_inline_menu_markup()
+        )
         return
 
     # Cache config metadata for per-user selection.
@@ -458,7 +474,9 @@ async def _button_show_configs(query: Any, context: Any, state: BotState) -> Non
     )
 
 
-async def _button_config_action(query: Any, context: Any, state: BotState, data: str) -> None:
+async def _button_config_action(
+    query: Any, context: Any, state: BotState, data: str
+) -> None:
     # Supported actions:
     # - cfg:menu:<idx>
     # - cfg:run:<idx>
@@ -526,7 +544,9 @@ async def _button_run_start(query: Any, context: Any, state: BotState) -> None:
     )
 
 
-async def _button_run_action(query: Any, context: Any, state: BotState, data: str) -> None:
+async def _button_run_action(
+    query: Any, context: Any, state: BotState, data: str
+) -> None:
     # Supported actions:
     # - run:menu:<idx>
     # - run:status:<idx>
@@ -650,6 +670,7 @@ async def _button_run_action(query: Any, context: Any, state: BotState, data: st
         if key in state.subscriptions:
             await query.answer("Already subscribed", show_alert=False)
             return
+
         # Create a minimal fake update-like object is not worth it; call the underlying logic.
         # We keep subscription code in cmd_subscribe; here we emulate the key insert.
         async def stream_loop() -> None:
@@ -658,7 +679,25 @@ async def _button_run_action(query: Any, context: Any, state: BotState, data: st
                 ws_url = "wss://" + ws_url[len("https://") :]
             elif ws_url.startswith("http://"):
                 ws_url = "ws://" + ws_url[len("http://") :]
-            ws_url = f"{ws_url}/runs/{run_id}/stream?types=FillEvent,MetricsEvent"
+            ws_url = (
+                f"{ws_url}/runs/{run_id}/stream"
+                "?types=FillEvent,MetricsEvent,NotificationIntentEvent"
+            )
+            outbox = NotificationOutbox(_subscription_outbox_path(run_id, chat_id))
+
+            async def send_from_outbox(msg: Any) -> None:
+                payload = msg.payload
+                await context.bot.send_message(
+                    chat_id=int(payload["chat_id"]),
+                    text=str(payload["text"]),
+                )
+
+            delivery_worker = OutboxNotifierWorker(
+                outbox=outbox,
+                sender=send_from_outbox,
+                retry_delay_seconds=2,
+                max_attempts=5,
+            )
 
             try:
                 import importlib
@@ -691,9 +730,17 @@ async def _button_run_action(query: Any, context: Any, state: BotState, data: st
                             msg = json.loads(raw)
                             if msg.get("kind") == "events":
                                 for ev in msg.get("events", []):
-                                    text = _format_event(ev)
-                                    if text:
-                                        await context.bot.send_message(chat_id=chat_id, text=text)
+                                    if isinstance(ev, dict):
+                                        _queue_event_for_delivery(
+                                            outbox=outbox,
+                                            run_id=run_id,
+                                            chat_id=chat_id,
+                                            ev=ev,
+                                        )
+                            await delivery_worker.process_once_async(
+                                limit=200,
+                                now=datetime.utcnow(),
+                            )
                 except asyncio.CancelledError:
                     return
                 except Exception:
@@ -782,7 +829,9 @@ async def cmd_runs(update: Any, context: Any) -> None:
         rid = str(r.get("run_id", ""))
         st = str(r.get("state", ""))
         label = rid if len(rid) <= 12 else rid[:12] + "..."
-        keyboard.append([InlineKeyboardButton(f"{label} ({st})", callback_data=f"run:menu:{i}")])
+        keyboard.append(
+            [InlineKeyboardButton(f"{label} ({st})", callback_data=f"run:menu:{i}")]
+        )
     keyboard.append([InlineKeyboardButton("Menu", callback_data="menu:help")])
 
     await update.message.reply_text(
@@ -1057,7 +1106,49 @@ def _format_event(ev: dict[str, Any]) -> Optional[str]:
         keys = ["equity", "cash", "max_drawdown", "total_trades"]
         parts = [f"{k}={payload.get(k)}" for k in keys if k in payload]
         return "METRICS " + " ".join(parts)
+    if et == "NotificationIntentEvent":
+        if isinstance(data, dict):
+            message = data.get("message")
+            if isinstance(message, str) and message:
+                return message
     return None
+
+
+def _subscription_outbox_path(run_id: str, chat_id: int) -> Path:
+    return _default_base_dir() / "telegram_outbox" / f"{chat_id}_{run_id}.sqlite3"
+
+
+def _event_dedupe_key(run_id: str, ev: dict[str, Any]) -> str:
+    data = ev.get("data", {})
+    if isinstance(data, dict):
+        key = data.get("dedupe_key")
+        if isinstance(key, str) and key:
+            return key
+    seq = ev.get("seq")
+    event_type = ev.get("event_type", "Event")
+    return f"{run_id}:{seq}:{event_type}"
+
+
+def _queue_event_for_delivery(
+    *, outbox: NotificationOutbox, run_id: str, chat_id: int, ev: dict[str, Any]
+) -> bool:
+    text = _format_event(ev)
+    if not text:
+        return False
+    event_type = str(ev.get("event_type", "Event"))
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "run_id": run_id,
+        "event_type": event_type,
+        "seq": ev.get("seq"),
+    }
+    outbox.enqueue(
+        event_type=event_type,
+        payload=payload,
+        dedupe_key=_event_dedupe_key(run_id=run_id, ev=ev),
+    )
+    return True
 
 
 async def cmd_subscribe(update: Any, context: Any) -> None:
@@ -1087,7 +1178,25 @@ async def cmd_subscribe(update: Any, context: Any) -> None:
             ws_url = "wss://" + ws_url[len("https://") :]
         elif ws_url.startswith("http://"):
             ws_url = "ws://" + ws_url[len("http://") :]
-        ws_url = f"{ws_url}/runs/{run_id}/stream?types=FillEvent,MetricsEvent"
+        ws_url = (
+            f"{ws_url}/runs/{run_id}/stream"
+            "?types=FillEvent,MetricsEvent,NotificationIntentEvent"
+        )
+        outbox = NotificationOutbox(_subscription_outbox_path(run_id, chat_id))
+
+        async def send_from_outbox(msg: Any) -> None:
+            payload = msg.payload
+            await context.bot.send_message(
+                chat_id=int(payload["chat_id"]),
+                text=str(payload["text"]),
+            )
+
+        delivery_worker = OutboxNotifierWorker(
+            outbox=outbox,
+            sender=send_from_outbox,
+            retry_delay_seconds=2,
+            max_attempts=5,
+        )
 
         try:
             import importlib
@@ -1120,9 +1229,17 @@ async def cmd_subscribe(update: Any, context: Any) -> None:
                         msg = json.loads(raw)
                         if msg.get("kind") == "events":
                             for ev in msg.get("events", []):
-                                text = _format_event(ev)
-                                if text:
-                                    await context.bot.send_message(chat_id=chat_id, text=text)
+                                if isinstance(ev, dict):
+                                    _queue_event_for_delivery(
+                                        outbox=outbox,
+                                        run_id=run_id,
+                                        chat_id=chat_id,
+                                        ev=ev,
+                                    )
+                        await delivery_worker.process_once_async(
+                            limit=200,
+                            now=datetime.utcnow(),
+                        )
                         # heartbeat: ignore
             except asyncio.CancelledError:
                 return
@@ -1155,8 +1272,25 @@ def _ws_headers_kwargs(websockets_mod: Any, api_key: str) -> dict[str, Any]:
     return {}
 
 
-async def _poll_events_loop(context: Any, state: BotState, chat_id: int, run_id: str) -> None:
+async def _poll_events_loop(
+    context: Any, state: BotState, chat_id: int, run_id: str
+) -> None:
     since = 0
+    outbox = NotificationOutbox(_subscription_outbox_path(run_id, chat_id))
+
+    async def send_from_outbox(msg: Any) -> None:
+        payload = msg.payload
+        await context.bot.send_message(
+            chat_id=int(payload["chat_id"]),
+            text=str(payload["text"]),
+        )
+
+    delivery_worker = OutboxNotifierWorker(
+        outbox=outbox,
+        sender=send_from_outbox,
+        retry_delay_seconds=2,
+        max_attempts=5,
+    )
     async with httpx.AsyncClient() as client:
         while True:
             data = await _api(
@@ -1167,11 +1301,19 @@ async def _poll_events_loop(context: Any, state: BotState, chat_id: int, run_id:
             )
             events = data.get("events", [])
             for ev in events:
-                text = _format_event(ev)
-                if text:
-                    await context.bot.send_message(chat_id=chat_id, text=text)
+                if isinstance(ev, dict):
+                    _queue_event_for_delivery(
+                        outbox=outbox,
+                        run_id=run_id,
+                        chat_id=chat_id,
+                        ev=ev,
+                    )
                 since = max(since, int(ev.get("seq", since)))
             since = max(since, int(data.get("last_seq", since)))
+            await delivery_worker.process_once_async(
+                limit=200,
+                now=datetime.utcnow(),
+            )
             await asyncio.sleep(1.0)
 
 

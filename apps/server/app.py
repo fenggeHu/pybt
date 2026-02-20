@@ -4,7 +4,14 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Any, Mapping, Optional, cast
 
-from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import JSONResponse
 
 from pybt.configuration import load_engine_from_dict
@@ -35,9 +42,13 @@ def create_app(settings: ServerSettings) -> FastAPI:
     app = FastAPI(title="pybt-server", version="0.1.0")
 
     store = ConfigStore(settings.configs_dir)
-    runs = RunManager(runs_dir=settings.runs_dir, max_concurrent_runs=settings.max_concurrent_runs)
+    runs = RunManager(
+        runs_dir=settings.runs_dir, max_concurrent_runs=settings.max_concurrent_runs
+    )
 
-    def require_api_key(x_api_key: Optional[str] = Header(default=None, alias="X-API-Key")) -> None:
+    def require_api_key(
+        x_api_key: Optional[str] = Header(default=None, alias="X-API-Key"),
+    ) -> None:
         if x_api_key != settings.api_key:
             raise HTTPException(status_code=401, detail="invalid api key")
 
@@ -49,6 +60,18 @@ def create_app(settings: ServerSettings) -> FastAPI:
     def list_configs() -> dict[str, Any]:
         return {"ok": True, "configs": store.list()}
 
+    @app.post(
+        "/configs/validate",
+        response_model=ConfigValidateResponse,
+        dependencies=[Depends(require_api_key)],
+    )
+    def validate_config(req: ConfigValidateRequest) -> ConfigValidateResponse:
+        try:
+            load_engine_from_dict(req.config)
+            return ConfigValidateResponse(ok=True)
+        except Exception as exc:
+            return ConfigValidateResponse(ok=False, error=ErrorDTO(message=str(exc)))
+
     @app.get("/configs/{name}", dependencies=[Depends(require_api_key)])
     def get_config(name: str) -> dict[str, Any]:
         try:
@@ -57,30 +80,38 @@ def create_app(settings: ServerSettings) -> FastAPI:
             raise HTTPException(status_code=404, detail="config not found")
         return {"ok": True, "name": name, "config": cfg}
 
-    @app.post("/configs/{name}", response_model=ConfigSaveResponse, dependencies=[Depends(require_api_key)])
-    def save_config(name: str, req: Mapping[str, Any], force: bool = False) -> ConfigSaveResponse:
+    @app.post(
+        "/configs/{name}",
+        response_model=ConfigSaveResponse,
+        dependencies=[Depends(require_api_key)],
+    )
+    def save_config(
+        name: str, req: Mapping[str, Any], force: bool = False
+    ) -> ConfigSaveResponse:
         if not isinstance(req, dict):
-            raise HTTPException(status_code=400, detail="config body must be a JSON object")
+            raise HTTPException(
+                status_code=400, detail="config body must be a JSON object"
+            )
         try:
             store.save(name, req, force=force)
         except ConfigNameError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         except FileExistsError:
-            raise HTTPException(status_code=409, detail="config exists (use ?force=true to overwrite)")
+            raise HTTPException(
+                status_code=409, detail="config exists (use ?force=true to overwrite)"
+            )
         return ConfigSaveResponse(name=name)
 
-    @app.post("/configs/validate", response_model=ConfigValidateResponse, dependencies=[Depends(require_api_key)])
-    def validate_config(req: ConfigValidateRequest) -> ConfigValidateResponse:
-        try:
-            load_engine_from_dict(req.config)
-            return ConfigValidateResponse(ok=True)
-        except Exception as exc:
-            return ConfigValidateResponse(ok=False, error=ErrorDTO(message=str(exc)))
-
-    @app.post("/runs", response_model=RunCreateResponse, dependencies=[Depends(require_api_key)])
+    @app.post(
+        "/runs",
+        response_model=RunCreateResponse,
+        dependencies=[Depends(require_api_key)],
+    )
     def create_run(req: RunCreateRequest) -> RunCreateResponse:
         if (req.config_name is None) == (req.config is None):
-            raise HTTPException(status_code=400, detail="Provide exactly one of config_name or config")
+            raise HTTPException(
+                status_code=400, detail="Provide exactly one of config_name or config"
+            )
 
         if req.config_name is not None:
             try:
@@ -118,7 +149,11 @@ def create_app(settings: ServerSettings) -> FastAPI:
             )
         return {"ok": True, "runs": items}
 
-    @app.get("/runs/{run_id}", response_model=RunStatusDTO, dependencies=[Depends(require_api_key)])
+    @app.get(
+        "/runs/{run_id}",
+        response_model=RunStatusDTO,
+        dependencies=[Depends(require_api_key)],
+    )
     def get_run(run_id: str) -> RunStatusDTO:
         try:
             r = runs.get(run_id)
@@ -143,7 +178,11 @@ def create_app(settings: ServerSettings) -> FastAPI:
             raise HTTPException(status_code=404, detail="run not found")
         return {"ok": True}
 
-    @app.get("/runs/{run_id}/events", response_model=EventsResponse, dependencies=[Depends(require_api_key)])
+    @app.get(
+        "/runs/{run_id}/events",
+        response_model=EventsResponse,
+        dependencies=[Depends(require_api_key)],
+    )
     def get_events(
         run_id: str,
         limit: int = 200,
@@ -152,7 +191,9 @@ def create_app(settings: ServerSettings) -> FastAPI:
     ) -> EventsResponse:
         limit = max(1, min(limit, 2000))
         try:
-            last_seq, selected = runs.get_events(run_id, since_seq=since_seq, limit=limit, event_type=type)
+            last_seq, selected = runs.get_events(
+                run_id, since_seq=since_seq, limit=limit, event_type=type
+            )
         except KeyError:
             raise HTTPException(status_code=404, detail="run not found")
         return EventsResponse(
@@ -171,7 +212,9 @@ def create_app(settings: ServerSettings) -> FastAPI:
         )
 
     @app.websocket("/runs/{run_id}/stream")
-    async def stream_events(websocket: WebSocket, run_id: str, types: Optional[str] = None) -> None:
+    async def stream_events(
+        websocket: WebSocket, run_id: str, types: Optional[str] = None
+    ) -> None:
         # Auth via header for local-first safety.
         api_key = websocket.headers.get("x-api-key")
         if api_key != settings.api_key:
@@ -188,9 +231,13 @@ def create_app(settings: ServerSettings) -> FastAPI:
             while True:
                 # Send new events in small batches.
                 try:
-                    last_seq, events = runs.get_events(run_id, since_seq=since_seq, limit=500, event_type=None)
+                    last_seq, events = runs.get_events(
+                        run_id, since_seq=since_seq, limit=500, event_type=None
+                    )
                 except KeyError:
-                    await websocket.send_json({"kind": "error", "error": "run not found"})
+                    await websocket.send_json(
+                        {"kind": "error", "error": "run not found"}
+                    )
                     await websocket.close(code=4404)
                     return
 
@@ -214,16 +261,24 @@ def create_app(settings: ServerSettings) -> FastAPI:
                 since_seq = max_seen
 
                 if out:
-                    await websocket.send_json({"kind": "events", "events": out, "last_seq": last_seq})
+                    await websocket.send_json(
+                        {"kind": "events", "events": out, "last_seq": last_seq}
+                    )
                 else:
                     # Keep the connection alive and allow client to detect liveness.
-                    await websocket.send_json({"kind": "heartbeat", "last_seq": last_seq})
+                    await websocket.send_json(
+                        {"kind": "heartbeat", "last_seq": last_seq}
+                    )
 
                 await asyncio.sleep(0.5)
         except WebSocketDisconnect:
             return
 
-    @app.get("/runs/{run_id}/summary", response_model=SummaryResponse, dependencies=[Depends(require_api_key)])
+    @app.get(
+        "/runs/{run_id}/summary",
+        response_model=SummaryResponse,
+        dependencies=[Depends(require_api_key)],
+    )
     def get_summary(run_id: str) -> SummaryResponse:
         try:
             r = runs.get(run_id)
@@ -231,12 +286,18 @@ def create_app(settings: ServerSettings) -> FastAPI:
             raise HTTPException(status_code=404, detail="run not found")
         if r.summary is None:
             if r.state in {"running", "starting"}:
-                return SummaryResponse(ok=False, run_id=run_id, error=ErrorDTO(message="run still running"))
-            return SummaryResponse(ok=False, run_id=run_id, error=ErrorDTO(message="summary not available"))
+                return SummaryResponse(
+                    ok=False, run_id=run_id, error=ErrorDTO(message="run still running")
+                )
+            return SummaryResponse(
+                ok=False, run_id=run_id, error=ErrorDTO(message="summary not available")
+            )
         return SummaryResponse(ok=True, run_id=run_id, summary=r.summary)
 
     @app.exception_handler(HTTPException)
     def http_exception_handler(_, exc: HTTPException) -> JSONResponse:
-        return JSONResponse(status_code=exc.status_code, content={"ok": False, "error": exc.detail})
+        return JSONResponse(
+            status_code=exc.status_code, content={"ok": False, "error": exc.detail}
+        )
 
     return app

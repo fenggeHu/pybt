@@ -2,8 +2,9 @@
 
 import json
 from datetime import datetime
+from importlib import import_module
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Sequence
+from typing import Any, Iterable, Mapping, Optional, Sequence, Union
 
 from pybt.analytics import DetailedReporter, EquityCurveReporter, TradeLogReporter
 from pybt.core.engine import BacktestEngine, EngineConfig
@@ -112,6 +113,36 @@ def _build_strategy(cfg: Mapping[str, Any]) -> Strategy:
             breakout_factor=float(cfg.get("breakout_factor", 1.5)),
             strategy_id=cfg.get("strategy_id", "uptrend"),
         )
+    if strat_type == "plugin":
+        class_path = _require(cfg, "class_path")
+        if not isinstance(class_path, str) or "." not in class_path:
+            raise ValueError(
+                "Plugin strategy class_path must be in '<module>.<ClassName>' format"
+            )
+
+        module_name, _, class_name = class_path.rpartition(".")
+        try:
+            module = import_module(module_name)
+            strategy_cls = getattr(module, class_name)
+        except (ImportError, AttributeError) as exc:
+            raise ValueError(
+                f"Unable to resolve plugin strategy: {class_path}"
+            ) from exc
+
+        params = cfg.get("params", {})
+        if not isinstance(params, Mapping):
+            raise ValueError("Plugin strategy params must be an object")
+
+        try:
+            strategy = strategy_cls(**dict(params))
+        except TypeError as exc:
+            raise ValueError(
+                f"Unable to initialize plugin strategy: {class_path}"
+            ) from exc
+
+        if not isinstance(strategy, Strategy):
+            raise ValueError(f"Plugin strategy '{class_path}' must implement Strategy")
+        return strategy
     raise ValueError(f"Unsupported strategy type: {strat_type}")
 
 
@@ -219,8 +250,12 @@ def load_engine_from_dict(raw: Mapping[str, Any]) -> BacktestEngine:
     execution = _build_execution(_require(raw, "execution"))
 
     default_initial_cash = float(portfolio_cfg.get("initial_cash", 100_000.0))
-    risk = _build_risk_managers(raw.get("risk"), default_initial_cash=default_initial_cash)
-    reporters = _build_reporters(raw.get("reporters"), default_initial_cash=default_initial_cash)
+    risk = _build_risk_managers(
+        raw.get("risk"), default_initial_cash=default_initial_cash
+    )
+    reporters = _build_reporters(
+        raw.get("reporters"), default_initial_cash=default_initial_cash
+    )
 
     engine_cfg = EngineConfig(
         name=str(raw.get("name", "backtest")),
@@ -239,7 +274,7 @@ def load_engine_from_dict(raw: Mapping[str, Any]) -> BacktestEngine:
     )
 
 
-def load_engine_from_json(path: Path | str) -> BacktestEngine:
+def load_engine_from_json(path: Union[Path, str]) -> BacktestEngine:
     """Load BacktestEngine from a JSON config file with validation.
 
     The config file is the supplier; this builder owns validation and wiring,
