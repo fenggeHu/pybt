@@ -14,6 +14,7 @@ from pybt.data import (
     ADataLiveFeed,
     InMemoryBarFeed,
     LocalCSVBarFeed,
+    EastmoneySSEFeed,
     RESTPollingFeed,
     WebSocketJSONFeed,
 )
@@ -91,6 +92,28 @@ def _build_feed(cfg: Mapping[str, Any]) -> DataFeed:
             symbol=_require(cfg, "symbol"),
             poll_interval=float(cfg.get("poll_interval", 1.0)),
             max_ticks=cfg.get("max_ticks"),
+        )
+
+    if feed_type == "eastmoney_sse":
+        return EastmoneySSEFeed(
+            symbol=_require(cfg, "symbol"),
+            sse_url=cfg.get("sse_url"),
+            secid=cfg.get("secid"),
+            token=str(cfg.get("token", "")),
+            cname=cfg.get("cname"),
+            seq=int(cfg.get("seq", 0)),
+            noop=int(cfg.get("noop", 0)),
+            max_ticks=cfg.get("max_ticks"),
+            max_reconnects=int(cfg.get("max_reconnects", 3)),
+            backoff_seconds=float(cfg.get("backoff_seconds", 0.5)),
+            connect_timeout=float(cfg.get("connect_timeout", 5.0)),
+            read_timeout=float(cfg.get("read_timeout", 30.0)),
+            snapshot_url=str(
+                cfg.get("snapshot_url", "https://push2.eastmoney.com/api/qt/stock/get")
+            ),
+            snapshot_fields=str(cfg.get("snapshot_fields", "f43,f47,f48")),
+            snapshot_ut=str(cfg.get("snapshot_ut", "fa5fd1943c7b386f172d6893dbfba10b")),
+            price_scale=float(cfg.get("price_scale", 100.0)),
         )
 
     raise ValueError(f"Unsupported data_feed type: {feed_type}")

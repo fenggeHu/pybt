@@ -7,7 +7,7 @@ PyBT 是一个以事件总线为核心的 Python 回测框架，强调组件解�
 核心能力
 --------
 - 事件驱动引擎：`BacktestEngine` + 同步 FIFO `EventBus`，统一调度 `MarketEvent/SignalEvent/OrderEvent/FillEvent/MetricsEvent`。
-- 数据源：`InMemoryBarFeed`、`LocalCSVBarFeed`（CSV/Parquet）、`RESTPollingFeed`、`WebSocketJSONFeed`、`ADataLiveFeed`。
+- 数据源：`InMemoryBarFeed`、`LocalCSVBarFeed`（CSV/Parquet）、`RESTPollingFeed`、`WebSocketJSONFeed`、`ADataLiveFeed`、`EastmoneySSEFeed`。
 - 策略：`MovingAverageCrossStrategy`（双均线）与 `UptrendBreakoutStrategy`（趋势突破）。
 - 执行：`ImmediateExecutionHandler` 支持滑点、佣金、部分成交、行情陈旧保护、成交时机（`current_close`/`next_open`）。
 - 风控：`MaxPositionRisk`、`BuyingPowerRisk`、`ConcentrationRisk`、`PriceBandRisk`。
@@ -40,7 +40,7 @@ pip install -e .[app]
 ------------
 `pybt.configuration.loader` 当前支持以下组件类型：
 
-- `data_feed.type`: `local_csv` / `local_file` / `inmemory` / `rest` / `websocket` / `adata`
+- `data_feed.type`: `local_csv` / `local_file` / `inmemory` / `rest` / `websocket` / `adata` / `eastmoney_sse`
 - `strategies[].type`: `moving_average` / `uptrend` / `plugin`
 - `portfolio.type`: `naive`
 - `execution.type`: `immediate`
@@ -196,6 +196,7 @@ bash scripts/start_realtime_system.sh --check
 
 生产配置文件：
 - `configs/ashare_live_prod.json`
+- `configs/eastmoney_sse_prod.json`
 
 项目结构
 --------
@@ -223,4 +224,5 @@ mypy pybt
 --------
 - `execution.fill_timing="current_close"` 默认值更偏向教学/回放；若追求更现实的时序，建议使用 `next_open` 以降低未来函数偏差。
 - `ADataLiveFeed` 依赖 `adata`，未安装时请避免使用 `data_feed.type="adata"`。
+- `EastmoneySSEFeed` 基于网页 SSE 推送通道，可能受网站风控策略、连接节流和参数变化影响，生产上建议准备备用行情源和告警。
 - 内置策略与组合/风控实现偏简化，生产环境建议扩展交易成本、容量约束与更严格的数据校验。
