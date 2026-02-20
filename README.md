@@ -31,58 +31,10 @@ pip install -e .[server]
 pip install -e .[app]
 ```
 
-快速开始（代码装配）
---------------------
-```python
-from datetime import datetime, timedelta
-
-from pybt import BacktestEngine, Bar, EngineConfig, configure_logging
-from pybt.analytics import EquityCurveReporter
-from pybt.data import InMemoryBarFeed
-from pybt.execution import ImmediateExecutionHandler
-from pybt.portfolio import NaivePortfolio
-from pybt.risk import MaxPositionRisk
-from pybt.strategies import MovingAverageCrossStrategy
-
-
-def synthetic_bars(symbol: str, start: datetime, periods: int) -> list[Bar]:
-    out: list[Bar] = []
-    price = 100.0
-    for i in range(periods):
-        price += 0.5
-        ts = start + timedelta(days=i)
-        out.append(
-            Bar(
-                symbol=symbol,
-                timestamp=ts,
-                open=price - 0.2,
-                high=price + 0.3,
-                low=price - 0.3,
-                close=price,
-                volume=1000 + i,
-                amount=price * (1000 + i),
-            )
-        )
-    return out
-
-
-start = datetime(2024, 1, 1)
-bars = synthetic_bars("TEST", start, periods=40)
-
-configure_logging("INFO", json_format=False)
-
-engine = BacktestEngine(
-    data_feed=InMemoryBarFeed(bars),
-    strategies=[MovingAverageCrossStrategy(symbol="TEST", short_window=3, long_window=8)],
-    portfolio=NaivePortfolio(lot_size=100, initial_cash=100_000.0),
-    execution=ImmediateExecutionHandler(slippage=0.0, commission=0.0, fill_timing="next_open"),
-    risk_managers=[MaxPositionRisk(limit=500)],
-    reporters=[EquityCurveReporter(initial_cash=100_000.0)],
-    config=EngineConfig(name="demo", start=start, end=bars[-1].timestamp),
-)
-
-engine.run()
-```
+生产运行建议
+-----------
+生产环境建议统一走**配置驱动**（server + telegram-bot + JSON 配置），避免在代码中写死策略参数和行情源。
+推荐直接使用下文的一键启停脚本和 A 股实盘配置。
 
 配置驱动运行
 ------------
@@ -99,7 +51,7 @@ engine.run()
 
 ```json
 {
-  "name": "cfg-demo",
+  "name": "ashare-live-prod",
   "data_feed": {
     "type": "local_csv",
     "path": "./data/AAA/Bar.csv",
@@ -143,10 +95,10 @@ engine.run()
 ```json
 {
   "type": "plugin",
-  "class_path": "strategies.test_plugins.NoopPluginStrategy",
+  "class_path": "strategies.my_live_strategy.MyLiveStrategy",
   "params": {
     "symbol": "AAA",
-    "strategy_id": "smoke-plugin"
+    "strategy_id": "my-live"
   }
 }
 ```
@@ -192,19 +144,58 @@ export PYBT_SERVER_URL=http://127.0.0.1:8765
 pybt-bot
 ```
 
-端到端 Smoke 验证（本地）
-----------------------
-该脚本会自动启动本地 server、提交内存行情配置、触发策略运行，并通过 Telegram outbox 发送链路做一次完整联调（使用 mock sender，不依赖真实 Telegram 网络）。
+一键启动（生产链路）
+------------------
+脚本会启动 server + telegram-bot，并可选自动提交配置后直接开跑。
+
+启动（后台）：
 
 ```bash
-python3.11 scripts/smoke_realtime_pipeline.py --timeout 40
+export PYBT_API_KEY=your_key
+export TELEGRAM_BOT_TOKEN=your_token
+export TELEGRAM_ADMIN_PASSWORD=your_password
+export PYBT_BASE_DIR=$HOME/.pybt
+
+bash scripts/start_realtime_system.sh --detach --run-config ./prod_live.json
 ```
 
-可选：保留运行目录便于排查
+A股生产推荐（直接用生产配置）：
 
 ```bash
-python3.11 scripts/smoke_realtime_pipeline.py --timeout 40 --base-dir /tmp/pybt_smoke
+export PYBT_API_KEY=your_key
+export TELEGRAM_BOT_TOKEN=your_token
+export TELEGRAM_ADMIN_PASSWORD=your_password
+export PYBT_BASE_DIR=$HOME/.pybt
+
+bash scripts/start_ashare_prod.sh
 ```
+
+如需指定你自己的配置文件：
+
+```bash
+bash scripts/start_ashare_prod.sh ./configs/your_ashare_live.json
+```
+
+启动（前台，便于观察日志）：
+
+```bash
+bash scripts/start_realtime_system.sh --run-config ./prod_live.json
+```
+
+停止（根据 pid 文件优雅退出）：
+
+```bash
+bash scripts/stop_realtime_system.sh
+```
+
+仅检查环境变量与运行参数：
+
+```bash
+bash scripts/start_realtime_system.sh --check
+```
+
+生产配置文件：
+- `configs/ashare_live_prod.json`
 
 项目结构
 --------
