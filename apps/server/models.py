@@ -7,7 +7,10 @@ from pydantic import BaseModel, Field
 
 
 class ErrorDTO(BaseModel):
+    code: str = "error"
     message: str
+    hint: Optional[str] = None
+    request_id: Optional[str] = None
     details: Optional[Mapping[str, Any]] = None
 
 

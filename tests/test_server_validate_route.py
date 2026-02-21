@@ -52,3 +52,29 @@ def test_validate_route_not_shadowed_by_config_name(tmp_path) -> None:
     assert resp.status_code == 200
     data = resp.json()
     assert data["ok"] is True
+
+
+def test_health_returns_boolean_ok(tmp_path) -> None:
+    app = create_app(ServerSettings(base_dir=tmp_path, api_key="k"))
+    client = TestClient(app)
+
+    resp = client.get("/health")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is True
+
+
+def test_definitions_route_requires_auth_and_returns_items(tmp_path) -> None:
+    app = create_app(ServerSettings(base_dir=tmp_path, api_key="k"))
+    client = TestClient(app)
+
+    unauth = client.get("/definitions")
+    assert unauth.status_code == 401
+
+    resp = client.get("/definitions", headers={"X-API-Key": "k"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is True
+    assert isinstance(data["definitions"], list)
+    assert data["definitions"], "definitions should not be empty"

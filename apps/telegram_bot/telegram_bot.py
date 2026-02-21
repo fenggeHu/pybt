@@ -4,6 +4,7 @@ import asyncio
 import hmac
 import inspect
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -16,6 +17,8 @@ from pybt.live.notify import NotificationOutbox, OutboxNotifierWorker
 
 # Telegram is an optional dependency. We import it at runtime in main() so that
 # `import pybt` and `pytest` work without the app extras installed.
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _utc_stamp() -> str:
@@ -156,6 +159,32 @@ class BotState:
     subscriptions: dict[tuple[int, str], asyncio.Task]
 
 
+class ApiClientError(RuntimeError):
+    def __init__(self, status_code: int, message: str) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _extract_server_error_message(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    err = payload.get("error")
+    if isinstance(err, str) and err:
+        return err
+    if isinstance(err, dict):
+        msg = err.get("message")
+        if isinstance(msg, str) and msg:
+            hint = err.get("hint")
+            request_id = err.get("request_id")
+            out = msg
+            if isinstance(hint, str) and hint:
+                out = f"{out} (hint: {hint})"
+            if isinstance(request_id, str) and request_id:
+                out = f"{out} [request_id={request_id}]"
+            return out
+    return None
+
+
 async def _api(
     client: httpx.AsyncClient,
     state: BotState,
@@ -168,10 +197,23 @@ async def _api(
     resp = await client.request(
         method, url, headers=headers, json=json_body, timeout=30
     )
+    payload: Any = None
+    try:
+        payload = resp.json()
+    except Exception:
+        payload = None
+
     # server returns ok=false for HTTPException too; prefer status for flow.
     if resp.status_code >= 400:
-        raise RuntimeError(f"HTTP {resp.status_code}: {resp.text}")
-    return resp.json()
+        message = _extract_server_error_message(payload)
+        if not message:
+            text = (resp.text or "").strip()
+            message = text[:240] if text else "request failed"
+        raise ApiClientError(resp.status_code, message)
+
+    if payload is None:
+        raise ApiClientError(resp.status_code, "Invalid JSON response from server")
+    return payload
 
 
 def _check_auth(state: BotState, update: Any) -> bool:
@@ -1344,6 +1386,19 @@ async def cmd_unsubscribe(update: Any, context: Any) -> None:
     )
 
 
+async def _on_handler_error(update: Any, context: Any) -> None:
+    err = getattr(context, "error", None)
+    LOGGER.exception("telegram handler error", exc_info=err)
+
+    msg = getattr(update, "effective_message", None)
+    if msg is None:
+        return
+    if isinstance(err, ApiClientError):
+        await msg.reply_text(f"Server request failed ({err.status_code}): {err}")
+        return
+    await msg.reply_text("Unexpected error. Please retry in a moment.")
+
+
 def main() -> None:
     try:
         import importlib
@@ -1363,7 +1418,7 @@ def main() -> None:
     if not token:
         raise SystemExit("TELEGRAM_BOT_TOKEN is required")
     api_base = os.environ.get("PYBT_SERVER_URL", "http://127.0.0.1:8765")
-    api_key = os.environ.get("PYBT_API_KEY", "123")
+    api_key = os.environ.get("PYBT_API_KEY", "").strip()
     if not api_key:
         raise SystemExit("PYBT_API_KEY is required (same as server)")
 
@@ -1404,6 +1459,7 @@ def main() -> None:
 
     app.add_handler(MessageHandler(filters.Document.ALL, on_document))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
+    app.add_error_handler(_on_handler_error)
 
     app.run_polling(close_loop=False)
 

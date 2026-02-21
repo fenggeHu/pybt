@@ -47,6 +47,8 @@ pip install -e .[app]
 - `risk[].type`: `max_position` / `buying_power` / `concentration` / `price_band`
 - `reporters[].type`: `equity` / `detailed` / `tradelog`
 
+若启用了 server，可通过 `GET /definitions`（需 `X-API-Key`）获取完整组件定义与参数元数据，便于 UI 或 Bot 做自动提示。
+
 最小配置示例：
 
 ```json
@@ -127,6 +129,11 @@ pip install -e .[server]
 export PYBT_API_KEY=your_key
 pybt-server
 ```
+
+错误响应约定：
+- 所有错误响应返回 `{"ok": false, "error": {...}}`。
+- `error` 至少包含 `code`、`message`、`request_id`，并可能包含 `hint`、`details`。
+- 响应头同时携带 `X-Request-ID`，便于跨 server/bot/日志排障。
 
 常用环境变量：
 - `PYBT_SERVER_HOST`（默认 `127.0.0.1`）
@@ -211,6 +218,11 @@ bash scripts/start_realtime_system.sh --check
 - `apps/server/`: FastAPI 服务（配置管理、运行管理、事件查询与流式推送）。
 - `apps/telegram_bot/`: Telegram 交互层。
 - `tests/`: PyTest 测试。
+
+架构文档
+--------
+- `docs/architecture_and_functionality.md`: 项目系统架构与功能分析。
+- `docs/diagrams/pybt-data-flow.drawio`: 可编辑的数据流程图（draw.io/diagrams.net）。
 
 开发与验证
 ----------
