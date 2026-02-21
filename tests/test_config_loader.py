@@ -102,6 +102,53 @@ def test_load_engine_from_json_requires_keys(tmp_path: Path) -> None:
         load_engine_from_json(cfg_path)
 
 
+def test_load_engine_from_json_requires_root_object(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match="Config JSON must be an object"):
+        load_engine_from_json(cfg_path)
+
+
+def test_load_engine_from_dict_requires_strategies_array(tmp_path: Path) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = {
+        "data_feed": {"type": "local_csv", "path": str(csv_path), "symbol": "AAA"},
+        "strategies": "not-an-array",
+        "portfolio": {"type": "naive"},
+        "execution": {"type": "immediate"},
+    }
+
+    with pytest.raises(ValueError, match="strategies must be an array"):
+        load_engine_from_dict(cfg)
+
+
+def test_load_engine_from_dict_requires_strategy_item_object(tmp_path: Path) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = {
+        "data_feed": {"type": "local_csv", "path": str(csv_path), "symbol": "AAA"},
+        "strategies": ["bad-item"],
+        "portfolio": {"type": "naive"},
+        "execution": {"type": "immediate"},
+    }
+
+    with pytest.raises(ValueError, match=r"strategies\[0\] must be an object"):
+        load_engine_from_dict(cfg)
+
+
+def test_load_engine_from_dict_requires_reporters_array(tmp_path: Path) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = {
+        "data_feed": {"type": "local_csv", "path": str(csv_path), "symbol": "AAA"},
+        "strategies": [{"type": "moving_average", "symbol": "AAA"}],
+        "portfolio": {"type": "naive"},
+        "execution": {"type": "immediate"},
+        "reporters": {"type": "equity"},
+    }
+
+    with pytest.raises(ValueError, match="reporters must be an array"):
+        load_engine_from_dict(cfg)
+
+
 def test_load_engine_from_dict_supports_eastmoney_sse_feed() -> None:
     cfg = {
         "name": "cfg-eastmoney",

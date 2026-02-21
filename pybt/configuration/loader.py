@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Sequence, Union
+from typing import Any, Mapping, Optional, Sequence, Union
 
 from pybt.core.engine import BacktestEngine, EngineConfig
 from pybt.core.interfaces import (
@@ -22,6 +22,23 @@ def _require(mapping: Mapping[str, Any], key: str) -> Any:
     if key not in mapping:
         raise ValueError(f"Missing required config key: '{key}'")
     return mapping[key]
+
+
+def _as_object(value: Any, *, field_name: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{field_name} must be an object")
+    return value
+
+
+def _as_object_array(value: Any, *, field_name: str) -> list[Mapping[str, Any]]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        raise ValueError(f"{field_name} must be an array")
+    items: list[Mapping[str, Any]] = []
+    for idx, item in enumerate(value):
+        if not isinstance(item, Mapping):
+            raise ValueError(f"{field_name}[{idx}] must be an object")
+        items.append(item)
+    return items
 
 
 def _parse_dt(value: Optional[str]) -> Optional[datetime]:
@@ -48,7 +65,7 @@ def _build_feed(cfg: Mapping[str, Any]) -> DataFeed:
     if feed_type == "inmemory":
         from pybt.data import InMemoryBarFeed
 
-        raw_bars = _require(cfg, "bars")
+        raw_bars = _as_object_array(_require(cfg, "bars"), field_name="data_feed.bars")
         bars: list[Bar] = []
         for raw in raw_bars:
             ts = _parse_dt(_require(raw, "timestamp"))
@@ -290,22 +307,32 @@ def _build_reporters(
 def load_engine_from_dict(raw: Mapping[str, Any]) -> BacktestEngine:
     """Load BacktestEngine from an in-memory config dict."""
 
-    data_feed = _build_feed(_require(raw, "data_feed"))
-    strategies_cfg = _require(raw, "strategies")
-    if not isinstance(strategies_cfg, Iterable):
-        raise ValueError("strategies must be an array")
+    data_feed = _build_feed(_as_object(_require(raw, "data_feed"), field_name="data_feed"))
+    strategies_cfg = _as_object_array(_require(raw, "strategies"), field_name="strategies")
     strategies = [_build_strategy(item) for item in strategies_cfg]
 
-    portfolio_cfg = _require(raw, "portfolio")
+    portfolio_cfg = _as_object(_require(raw, "portfolio"), field_name="portfolio")
     portfolio = _build_portfolio(portfolio_cfg)
-    execution = _build_execution(_require(raw, "execution"))
+    execution = _build_execution(
+        _as_object(_require(raw, "execution"), field_name="execution")
+    )
 
     default_initial_cash = float(portfolio_cfg.get("initial_cash", 100_000.0))
+    risk_cfg = raw.get("risk")
+    if risk_cfg is not None:
+        risk_items = _as_object_array(risk_cfg, field_name="risk")
+    else:
+        risk_items = None
     risk = _build_risk_managers(
-        raw.get("risk"), default_initial_cash=default_initial_cash
+        risk_items, default_initial_cash=default_initial_cash
     )
+    reporters_cfg = raw.get("reporters")
+    if reporters_cfg is not None:
+        reporter_items = _as_object_array(reporters_cfg, field_name="reporters")
+    else:
+        reporter_items = None
     reporters = _build_reporters(
-        raw.get("reporters"), default_initial_cash=default_initial_cash
+        reporter_items, default_initial_cash=default_initial_cash
     )
 
     engine_cfg = EngineConfig(
@@ -334,6 +361,8 @@ def load_engine_from_json(path: Union[Path, str]) -> BacktestEngine:
 
     cfg_path = Path(path)
     raw = json.loads(cfg_path.read_text(encoding="utf-8"))
+    if not isinstance(raw, Mapping):
+        raise ValueError("Config JSON must be an object")
     return load_engine_from_dict(raw)
 
 
