@@ -141,6 +141,47 @@ def list_definitions() -> list[ComponentDef]:
             ],
         ),
         ComponentDef(
+            category="data_feed",
+            type="eastmoney_sse",
+            summary="Eastmoney SSE live feed",
+            params=[
+                ParamDef(name="symbol", type="str"),
+                ParamDef(
+                    name="sse_url",
+                    type="str",
+                    required=False,
+                    description="Override SSE endpoint URL",
+                ),
+                ParamDef(
+                    name="secid",
+                    type="str",
+                    required=False,
+                    description="Eastmoney secid; inferred from symbol when omitted",
+                ),
+                ParamDef(name="token", type="str", required=False, default=""),
+                ParamDef(name="cname", type="str", required=False),
+                ParamDef(name="seq", type="int", required=False, default=0),
+                ParamDef(name="noop", type="int", required=False, default=0),
+                ParamDef(name="max_ticks", type="int", required=False),
+                ParamDef(name="max_reconnects", type="int", required=False, default=3),
+                ParamDef(
+                    name="backoff_seconds", type="float", required=False, default=0.5
+                ),
+                ParamDef(
+                    name="connect_timeout", type="float", required=False, default=5.0
+                ),
+                ParamDef(
+                    name="read_timeout", type="float", required=False, default=30.0
+                ),
+                ParamDef(name="snapshot_url", type="str", required=False),
+                ParamDef(name="snapshot_fields", type="str", required=False),
+                ParamDef(name="snapshot_ut", type="str", required=False),
+                ParamDef(
+                    name="price_scale", type="float", required=False, default=100.0
+                ),
+            ],
+        ),
+        ComponentDef(
             category="strategy",
             type="moving_average",
             summary="Dual moving-average crossover (long/short)",
@@ -163,6 +204,25 @@ def list_definitions() -> list[ComponentDef]:
                 ),
                 ParamDef(
                     name="strategy_id", type="str", default="uptrend", required=False
+                ),
+            ],
+        ),
+        ComponentDef(
+            category="strategy",
+            type="plugin",
+            summary="External strategy class loaded by module path",
+            params=[
+                ParamDef(
+                    name="class_path",
+                    type="str",
+                    description="Import path in '<module>.<ClassName>' format",
+                ),
+                ParamDef(
+                    name="params",
+                    type="object",
+                    required=False,
+                    default={},
+                    description="Keyword args passed to plugin strategy constructor",
                 ),
             ],
         ),
