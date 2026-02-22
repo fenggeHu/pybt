@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import hmac
 import inspect
 import json
 import logging
 import os
 import re
+import shlex
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 import httpx
 from pybt.live.notify import NotificationOutbox, OutboxNotifierWorker
@@ -157,6 +159,7 @@ class BotState:
     authed_user_ids: set[int]
     pending_run: set[int]
     subscriptions: dict[tuple[int, str], asyncio.Task]
+    draft_configs: dict[int, dict[str, Any]]
 
 
 class ApiClientError(RuntimeError):
@@ -259,6 +262,213 @@ def _save_authed_user_ids(path: Path, ids: set[int]) -> None:
     tmp.replace(path)
 
 
+def _new_draft_config(symbol: str = "AAA") -> dict[str, Any]:
+    symbol = symbol.strip() or "AAA"
+    return {
+        "name": f"tg_draft_{_utc_stamp()}",
+        "data_feed": {
+            "type": "local_csv",
+            "path": f"./data/{symbol}/Bar.csv",
+            "symbol": symbol,
+        },
+        "strategies": [
+            {
+                "type": "moving_average",
+                "symbol": symbol,
+                "short_window": 5,
+                "long_window": 20,
+                "strategy_id": "mac",
+            }
+        ],
+        "portfolio": {"type": "naive", "lot_size": 100, "initial_cash": 100000},
+        "execution": {
+            "type": "immediate",
+            "slippage": 0.0,
+            "commission": 0.0,
+            "fill_timing": "next_open",
+        },
+        "risk": [],
+        "reporters": [{"type": "equity"}],
+    }
+
+
+def _get_or_create_draft(state: BotState, user_id: int) -> dict[str, Any]:
+    cfg = state.draft_configs.get(user_id)
+    if cfg is None:
+        cfg = _new_draft_config()
+        state.draft_configs[user_id] = cfg
+    return cfg
+
+
+def _command_tail(text: Optional[str]) -> str:
+    if not text:
+        return ""
+    return text.split(" ", 1)[1].strip() if " " in text else ""
+
+
+def _parse_loose_value(text: str) -> Any:
+    t = text.strip()
+    if not t:
+        return ""
+    lower = t.lower()
+    if lower == "none":
+        return None
+    if lower in {"true", "false", "null"}:
+        return json.loads(lower)
+    try:
+        return json.loads(t)
+    except Exception:
+        return t
+
+
+def _parse_component_spec(raw: str, *, require_type: bool) -> dict[str, Any]:
+    text = _strip_json_fence(raw).strip()
+    if not text:
+        raise ValueError("Missing component spec")
+    if text.startswith("{"):
+        payload = _parse_json(text)
+    else:
+        tokens = shlex.split(text)
+        if not tokens:
+            raise ValueError("Missing component spec")
+        payload: dict[str, Any] = {}
+        kv_tokens = tokens
+        first = tokens[0]
+        if require_type and "=" not in first:
+            payload["type"] = first
+            kv_tokens = tokens[1:]
+        elif (not require_type) and ("=" not in first):
+            payload["type"] = first
+            kv_tokens = tokens[1:]
+        for tok in kv_tokens:
+            if "=" not in tok:
+                raise ValueError(
+                    f"Invalid token: {tok}. Use key=value pairs or JSON object."
+                )
+            key, value = tok.split("=", 1)
+            key = key.strip()
+            if not key:
+                raise ValueError("Invalid key=value pair")
+            payload[key] = _parse_loose_value(value)
+    if require_type:
+        t = payload.get("type")
+        if not isinstance(t, str) or not t.strip():
+            raise ValueError("Component type is required")
+        payload["type"] = t.strip()
+    return payload
+
+
+def _normalize_config_name(name: str) -> str:
+    out = name.strip()
+    if not out:
+        raise ValueError("Config name is required")
+    if not out.endswith(".json"):
+        out = f"{out}.json"
+    return out
+
+
+def _format_json_block(value: Any, *, max_chars: int = 3200) -> str:
+    raw = json.dumps(value, ensure_ascii=False, indent=2)
+    if len(raw) <= max_chars:
+        return raw
+    return raw[:max_chars] + "\n... (truncated)"
+
+
+def _extract_validate_error(resp: Any) -> Optional[str]:
+    if not isinstance(resp, dict):
+        return None
+    if bool(resp.get("ok")):
+        return None
+    err = resp.get("error")
+    if isinstance(err, dict) and isinstance(err.get("message"), str):
+        return err["message"]
+    return _fmt_short(err)
+
+
+async def _validate_draft_config(
+    client: httpx.AsyncClient, state: BotState, config: dict[str, Any]
+) -> Optional[str]:
+    resp = await _api(
+        client,
+        state,
+        "POST",
+        "/configs/validate",
+        {"config": _build_effective_config(config)},
+    )
+    return _extract_validate_error(resp)
+
+
+def _format_draft_summary(config: dict[str, Any]) -> str:
+    feed = config.get("data_feed")
+    feed_type = (
+        str(feed.get("type"))
+        if isinstance(feed, dict) and isinstance(feed.get("type"), str)
+        else "-"
+    )
+    feed_symbol = (
+        str(feed.get("symbol"))
+        if isinstance(feed, dict) and feed.get("symbol") is not None
+        else "-"
+    )
+    strategies = config.get("strategies")
+    strategy_count = len(strategies) if isinstance(strategies, list) else 0
+    return "\n".join(
+        [
+            f"Draft: {config.get('name', '-')}",
+            f"DataFeed: {feed_type} (symbol={feed_symbol})",
+            f"Strategies: {strategy_count}",
+        ]
+    )
+
+
+def _strategy_enabled(cfg: Mapping[str, Any]) -> bool:
+    value = cfg.get("enabled")
+    if isinstance(value, bool):
+        return value
+    return True
+
+
+def _build_effective_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    """Render runtime config by dropping disabled strategies and internal flags."""
+
+    out = copy.deepcopy(dict(config))
+    raw_strategies = out.get("strategies")
+    if not isinstance(raw_strategies, list):
+        return out
+    effective: list[dict[str, Any]] = []
+    for item in raw_strategies:
+        if not isinstance(item, dict):
+            continue
+        if not _strategy_enabled(item):
+            continue
+        one = dict(item)
+        one.pop("enabled", None)
+        effective.append(one)
+    out["strategies"] = effective
+    return out
+
+
+def _match_strategy_indexes(strategies: list[Any], target: str) -> list[int]:
+    t = target.strip()
+    if not t:
+        return []
+    if t.lower() == "all":
+        return list(range(len(strategies)))
+    try:
+        idx = int(t)
+    except Exception:
+        idx = -1
+    if 0 <= idx < len(strategies):
+        return [idx]
+    matched: list[int] = []
+    for i, item in enumerate(strategies):
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("strategy_id", "")).strip() == t:
+            matched.append(i)
+    return matched
+
+
 async def cmd_help(update: Any, context: Any) -> None:
     text = "\n".join(
         [
@@ -271,6 +481,17 @@ async def cmd_help(update: Any, context: Any) -> None:
             "/stop <run_id>",
             "/subscribe <run_id>",
             "/unsubscribe <run_id>",
+            "/draft_new [symbol]",
+            "/draft_show",
+            "/set_feed <type> key=value ... | JSON",
+            "/add_strategy <type> key=value ... | JSON",
+            "/set_strategy <index> <type> key=value ... | JSON",
+            "/del_strategy <index>",
+            "/list_strategy",
+            "/strategy on/off <index|strategy_id|all>",
+            "/save_draft <name.json> [force]",
+            "/run_draft",
+            "/definitions [data_feed|strategy]",
             "/login <password>",
             "/logout",
             "/menu",
@@ -409,6 +630,17 @@ async def on_button(update: Any, context: Any) -> None:
                 "/stop <run_id>",
                 "/subscribe <run_id>",
                 "/unsubscribe <run_id>",
+                "/draft_new [symbol]",
+                "/draft_show",
+                "/set_feed <type> key=value ... | JSON",
+                "/add_strategy <type> key=value ... | JSON",
+                "/set_strategy <index> <type> key=value ... | JSON",
+                "/del_strategy <index>",
+                "/list_strategy",
+                "/strategy on/off <index|strategy_id|all>",
+                "/save_draft <name.json> [force]",
+                "/run_draft",
+                "/definitions [data_feed|strategy]",
                 "/login <password>",
                 "/logout",
             ]
@@ -686,9 +918,11 @@ async def _button_run_action(
         async with httpx.AsyncClient() as client:
             payload = await _api(client, state, "GET", path)
         await query.edit_message_text(
-            text=_format_run_status(payload)
-            if action == "status"
-            else _format_summary_response(payload),
+            text=(
+                _format_run_status(payload)
+                if action == "status"
+                else _format_summary_response(payload)
+            ),
             reply_markup=_inline_menu_markup(),
         )
         return
@@ -969,6 +1203,383 @@ async def cmd_run(update: Any, context: Any) -> None:
     await msg.reply_text(
         "Run mode enabled. Send config.json (document) or paste JSON text. Send 'Cancel' to abort.",
         reply_markup=_pending_run_markup(update),
+    )
+
+
+async def cmd_definitions(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    category = context.args[0].strip().lower() if context.args else ""
+    allowed = {"data_feed", "strategy"}
+    if category and category not in allowed:
+        await msg.reply_text("Usage: /definitions [data_feed|strategy]")
+        return
+
+    async with httpx.AsyncClient() as client:
+        data = await _api(client, state, "GET", "/definitions")
+    defs = data.get("definitions", [])
+    if not isinstance(defs, list):
+        await msg.reply_text("Definitions not available")
+        return
+    lines = ["Definitions:"]
+    for item in defs:
+        if not isinstance(item, dict):
+            continue
+        cat = str(item.get("category", ""))
+        if category and cat != category:
+            continue
+        t = str(item.get("type", ""))
+        summary = str(item.get("summary", ""))
+        lines.append(f"- {cat}.{t}: {summary}")
+    if len(lines) == 1:
+        await msg.reply_text("No definitions matched.")
+        return
+    await msg.reply_text("\n".join(lines[:80]))
+
+
+async def cmd_draft_new(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    user_id = int(update.effective_user.id)  # type: ignore[union-attr]
+    symbol = context.args[0] if context.args else "AAA"
+    state.draft_configs[user_id] = _new_draft_config(symbol=symbol)
+    draft = state.draft_configs[user_id]
+    await msg.reply_text(
+        "Draft reset.\n"
+        + _format_draft_summary(draft)
+        + "\nUse /set_feed and /add_strategy to update.",
+        reply_markup=_menu_markup(update),
+    )
+
+
+async def cmd_draft_show(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    user_id = int(update.effective_user.id)  # type: ignore[union-attr]
+    draft = _get_or_create_draft(state, user_id)
+    await msg.reply_text(
+        _format_draft_summary(draft) + "\n\n" + _format_json_block(draft),
+        reply_markup=_menu_markup(update),
+    )
+
+
+async def cmd_list_strategy(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    user_id = int(update.effective_user.id)  # type: ignore[union-attr]
+    draft = _get_or_create_draft(state, user_id)
+    strategies = draft.get("strategies")
+    if not isinstance(strategies, list) or not strategies:
+        await msg.reply_text("No strategies in draft")
+        return
+    lines = ["Strategies:"]
+    for i, one in enumerate(strategies):
+        if not isinstance(one, dict):
+            continue
+        state_text = "ON" if _strategy_enabled(one) else "OFF"
+        strategy_id = str(one.get("strategy_id", "-"))
+        stype = str(one.get("type", "-"))
+        symbol = str(one.get("symbol", "-"))
+        lines.append(
+            f"{i}. [{state_text}] id={strategy_id} type={stype} symbol={symbol}"
+        )
+    if len(lines) == 1:
+        await msg.reply_text("No valid strategies in draft")
+        return
+    await msg.reply_text("\n".join(lines), reply_markup=_menu_markup(update))
+
+
+async def cmd_strategy_switch(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    if len(context.args) < 2:
+        await msg.reply_text("Usage: /strategy on/off <index|strategy_id|all>")
+        return
+    action = str(context.args[0]).strip().lower()
+    if action not in {"on", "off"}:
+        await msg.reply_text("Usage: /strategy on/off <index|strategy_id|all>")
+        return
+    target = str(context.args[1]).strip()
+
+    user_id = int(update.effective_user.id)  # type: ignore[union-attr]
+    draft = _get_or_create_draft(state, user_id)
+    strategies = draft.get("strategies")
+    if not isinstance(strategies, list) or not strategies:
+        await msg.reply_text("No strategies in draft")
+        return
+    matched = _match_strategy_indexes(strategies, target)
+    if not matched:
+        await msg.reply_text(f"Strategy not found: {target}")
+        return
+
+    snapshot = copy.deepcopy(strategies)
+    enabled = action == "on"
+    for idx in matched:
+        if not isinstance(strategies[idx], dict):
+            continue
+        strategies[idx]["enabled"] = enabled
+
+    async with httpx.AsyncClient() as client:
+        err = await _validate_draft_config(client, state, draft)
+    if err:
+        draft["strategies"] = snapshot
+        await msg.reply_text(f"Strategy state update rejected by validator: {err}")
+        return
+
+    changed = ", ".join(str(i) for i in matched)
+    await msg.reply_text(
+        f"Strategy state updated: {action.upper()} ({changed})\n"
+        f"{_format_draft_summary(draft)}",
+        reply_markup=_menu_markup(update),
+    )
+
+
+async def cmd_set_feed(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    spec_text = _command_tail(msg.text)
+    if not spec_text:
+        await msg.reply_text("Usage: /set_feed <type> key=value ... | JSON")
+        return
+    try:
+        feed = _parse_component_spec(spec_text, require_type=True)
+    except Exception as exc:
+        await msg.reply_text(f"Invalid feed spec: {exc}")
+        return
+    user_id = int(update.effective_user.id)  # type: ignore[union-attr]
+    draft = _get_or_create_draft(state, user_id)
+    old_feed = copy.deepcopy(draft.get("data_feed"))
+    draft["data_feed"] = feed
+    async with httpx.AsyncClient() as client:
+        err = await _validate_draft_config(client, state, draft)
+    if err:
+        draft["data_feed"] = old_feed
+        await msg.reply_text(f"Feed update rejected by validator: {err}")
+        return
+    await msg.reply_text(
+        "Data feed updated.\n"
+        + _format_draft_summary(draft)
+        + "\nUse /draft_show to inspect full JSON.",
+        reply_markup=_menu_markup(update),
+    )
+
+
+async def cmd_add_strategy(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    spec_text = _command_tail(msg.text)
+    if not spec_text:
+        await msg.reply_text("Usage: /add_strategy <type> key=value ... | JSON")
+        return
+    try:
+        strategy = _parse_component_spec(spec_text, require_type=True)
+    except Exception as exc:
+        await msg.reply_text(f"Invalid strategy spec: {exc}")
+        return
+    strategy.setdefault("enabled", True)
+    user_id = int(update.effective_user.id)  # type: ignore[union-attr]
+    draft = _get_or_create_draft(state, user_id)
+    strategies = draft.get("strategies")
+    if not isinstance(strategies, list):
+        strategies = []
+        draft["strategies"] = strategies
+    strategies.append(strategy)
+    async with httpx.AsyncClient() as client:
+        err = await _validate_draft_config(client, state, draft)
+    if err:
+        strategies.pop()
+        await msg.reply_text(f"Strategy add rejected by validator: {err}")
+        return
+    await msg.reply_text(
+        f"Strategy added (#{len(strategies)-1}).\n{_format_draft_summary(draft)}",
+        reply_markup=_menu_markup(update),
+    )
+
+
+async def cmd_set_strategy(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    tail = _command_tail(msg.text)
+    parts = tail.split(" ", 1)
+    if len(parts) < 2:
+        await msg.reply_text("Usage: /set_strategy <index> <type> key=value ... | JSON")
+        return
+    try:
+        idx = int(parts[0])
+    except Exception:
+        await msg.reply_text("Invalid index")
+        return
+    try:
+        strategy = _parse_component_spec(parts[1], require_type=True)
+    except Exception as exc:
+        await msg.reply_text(f"Invalid strategy spec: {exc}")
+        return
+
+    user_id = int(update.effective_user.id)  # type: ignore[union-attr]
+    draft = _get_or_create_draft(state, user_id)
+    strategies = draft.get("strategies")
+    if not isinstance(strategies, list) or idx < 0 or idx >= len(strategies):
+        await msg.reply_text("Strategy index out of range")
+        return
+    old = copy.deepcopy(strategies[idx])
+    if "enabled" not in strategy:
+        strategy["enabled"] = _strategy_enabled(old) if isinstance(old, dict) else True
+    strategies[idx] = strategy
+    async with httpx.AsyncClient() as client:
+        err = await _validate_draft_config(client, state, draft)
+    if err:
+        strategies[idx] = old
+        await msg.reply_text(f"Strategy update rejected by validator: {err}")
+        return
+    await msg.reply_text(
+        f"Strategy #{idx} updated.\n{_format_draft_summary(draft)}",
+        reply_markup=_menu_markup(update),
+    )
+
+
+async def cmd_del_strategy(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    if not context.args:
+        await msg.reply_text("Usage: /del_strategy <index>")
+        return
+    try:
+        idx = int(context.args[0])
+    except Exception:
+        await msg.reply_text("Invalid index")
+        return
+    user_id = int(update.effective_user.id)  # type: ignore[union-attr]
+    draft = _get_or_create_draft(state, user_id)
+    strategies = draft.get("strategies")
+    if not isinstance(strategies, list) or idx < 0 or idx >= len(strategies):
+        await msg.reply_text("Strategy index out of range")
+        return
+    old = strategies.pop(idx)
+    async with httpx.AsyncClient() as client:
+        err = await _validate_draft_config(client, state, draft)
+    if err:
+        strategies.insert(idx, old)
+        await msg.reply_text(f"Delete rejected by validator: {err}")
+        return
+    await msg.reply_text(
+        f"Strategy #{idx} deleted.\n{_format_draft_summary(draft)}",
+        reply_markup=_menu_markup(update),
+    )
+
+
+async def cmd_save_draft(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    if not context.args:
+        await msg.reply_text("Usage: /save_draft <name.json> [force]")
+        return
+    try:
+        name = _normalize_config_name(context.args[0])
+    except Exception as exc:
+        await msg.reply_text(str(exc))
+        return
+    force = any(
+        str(arg).strip().lower() in {"force", "--force", "-f", "true"}
+        for arg in context.args[1:]
+    )
+    user_id = int(update.effective_user.id)  # type: ignore[union-attr]
+    draft = _get_or_create_draft(state, user_id)
+    payload = copy.deepcopy(draft)
+    payload["name"] = name[:-5]
+    async with httpx.AsyncClient() as client:
+        err = await _validate_draft_config(client, state, payload)
+        if err:
+            await msg.reply_text(f"Draft is invalid: {err}")
+            return
+        path = f"/configs/{name}" + ("?force=true" if force else "")
+        await _api(client, state, "POST", path, payload)
+    draft["name"] = name[:-5]
+    await msg.reply_text(
+        f"Draft saved as {name}",
+        reply_markup=_menu_markup(update),
+    )
+
+
+async def cmd_run_draft(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    user_id = int(update.effective_user.id)  # type: ignore[union-attr]
+    draft = _get_or_create_draft(state, user_id)
+    payload = copy.deepcopy(draft)
+    async with httpx.AsyncClient() as client:
+        err = await _validate_draft_config(client, state, payload)
+        if err:
+            await msg.reply_text(f"Draft is invalid: {err}")
+            return
+        run = await _api(client, state, "POST", "/runs", {"config": payload})
+    run_id = run.get("run_id")
+    await msg.reply_text(
+        "\n".join(
+            [
+                f"Started run: {run_id}",
+                "(inline draft)",
+                f"/status {run_id}",
+                f"/summary {run_id}",
+                f"/stop {run_id}",
+                f"/subscribe {run_id}",
+            ]
+        ),
+        reply_markup=_menu_markup(update),
     )
 
 
@@ -1437,6 +2048,7 @@ def main() -> None:
         authed_user_ids=authed_user_ids,
         pending_run=set(),
         subscriptions={},
+        draft_configs={},
     )
 
     app = Application.builder().token(token).build()
@@ -1454,6 +2066,17 @@ def main() -> None:
     app.add_handler(CommandHandler("stop", cmd_stop))
     app.add_handler(CommandHandler("subscribe", cmd_subscribe))
     app.add_handler(CommandHandler("unsubscribe", cmd_unsubscribe))
+    app.add_handler(CommandHandler("definitions", cmd_definitions))
+    app.add_handler(CommandHandler("draft_new", cmd_draft_new))
+    app.add_handler(CommandHandler("draft_show", cmd_draft_show))
+    app.add_handler(CommandHandler("set_feed", cmd_set_feed))
+    app.add_handler(CommandHandler("add_strategy", cmd_add_strategy))
+    app.add_handler(CommandHandler("set_strategy", cmd_set_strategy))
+    app.add_handler(CommandHandler("del_strategy", cmd_del_strategy))
+    app.add_handler(CommandHandler("list_strategy", cmd_list_strategy))
+    app.add_handler(CommandHandler("strategy", cmd_strategy_switch))
+    app.add_handler(CommandHandler("save_draft", cmd_save_draft))
+    app.add_handler(CommandHandler("run_draft", cmd_run_draft))
 
     app.add_handler(CallbackQueryHandler(on_button))
 

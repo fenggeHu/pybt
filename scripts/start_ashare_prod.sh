@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-CONFIG_PATH="${REPO_ROOT}/configs/ashare_live_prod.json"
+CONFIG_PATH="${REPO_ROOT}/configs/profiles/ashare_live_prod.jsonc"
 if [[ $# -gt 0 && "${1:0:2}" != "--" ]]; then
   CONFIG_PATH="$1"
   shift

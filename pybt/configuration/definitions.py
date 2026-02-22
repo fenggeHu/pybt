@@ -31,6 +31,128 @@ class ComponentDef:
 def list_definitions() -> list[ComponentDef]:
     """Return supported component types for form/documentation generation."""
 
+    market_feed_params = [
+        ParamDef(name="symbol", type="str"),
+        ParamDef(
+            name="source",
+            type="str",
+            required=False,
+            description=(
+                "Simple mode source type: sse / api / snapshot_api / snapshot / websocket. "
+                "When omitted, feed falls back to advanced sources/default chain."
+            ),
+        ),
+        ParamDef(
+            name="url",
+            type="str",
+            required=False,
+            description="Simple mode source URL (mapped to sse_url/snapshot_url/ws url)",
+        ),
+        ParamDef(
+            name="snapshot_fallback",
+            type="bool",
+            required=False,
+            default=True,
+            description="Simple mode: add snapshot_api fallback automatically for sse source",
+        ),
+        ParamDef(
+            name="headers",
+            type="object",
+            required=False,
+            description="Simple mode headers for selected source",
+        ),
+        ParamDef(
+            name="field_map",
+            type="object",
+            required=False,
+            description="Simple mode field mapping for selected source",
+        ),
+        ParamDef(
+            name="params",
+            type="object",
+            required=False,
+            description="Simple mode query params for selected source",
+        ),
+        ParamDef(
+            name="snapshot_field_map",
+            type="object",
+            required=False,
+            description="Simple mode: field_map for auto snapshot fallback source",
+        ),
+        ParamDef(
+            name="sse_url",
+            type="str",
+            required=False,
+            description="Override SSE endpoint URL",
+        ),
+        ParamDef(
+            name="secid",
+            type="str",
+            required=False,
+            description="Symbol identity used by source plugins when needed",
+        ),
+        ParamDef(name="token", type="str", required=False, default=""),
+        ParamDef(name="cname", type="str", required=False),
+        ParamDef(name="seq", type="int", required=False, default=0),
+        ParamDef(name="noop", type="int", required=False, default=0),
+        ParamDef(name="max_ticks", type="int", required=False),
+        ParamDef(name="max_reconnects", type="int", required=False, default=3),
+        ParamDef(name="backoff_seconds", type="float", required=False, default=0.5),
+        ParamDef(name="connect_timeout", type="float", required=False, default=5.0),
+        ParamDef(name="read_timeout", type="float", required=False, default=30.0),
+        ParamDef(
+            name="sse_base_url",
+            type="str",
+            required=False,
+            default="https://92.newspush.eastmoney.com/sse",
+        ),
+        ParamDef(
+            name="sse_headers",
+            type="object",
+            required=False,
+            description="Custom SSE request headers; merges with defaults",
+        ),
+        ParamDef(
+            name="reconnect_every_ticks",
+            type="int",
+            required=False,
+            description="Force reconnect after N published ticks",
+        ),
+        ParamDef(
+            name="heartbeat_timeout",
+            type="float",
+            required=False,
+            description="Reconnect if stream stays idle for too long (seconds)",
+        ),
+        ParamDef(
+            name="sources",
+            type="list[object]",
+            required=False,
+            description=(
+                "Plugin chain, e.g. [{type:'sse'}, {type:'snapshot_api'}]. "
+                "Supported built-ins: sse/api/snapshot_api/websocket/plugin. "
+                "Each source can set field_map, e.g. "
+                "{price:'data.quote.current',volume:['data.vol','f47']}."
+            ),
+        ),
+        ParamDef(name="snapshot_url", type="str", required=False),
+        ParamDef(name="snapshot_fields", type="str", required=False),
+        ParamDef(name="snapshot_ut", type="str", required=False),
+        ParamDef(
+            name="snapshot_headers",
+            type="object",
+            required=False,
+            description="Custom snapshot request headers; merges with defaults",
+        ),
+        ParamDef(
+            name="snapshot_params",
+            type="object",
+            required=False,
+            description="Additional snapshot query params",
+        ),
+        ParamDef(name="price_scale", type="float", required=False, default=100.0),
+    ]
+
     return [
         ComponentDef(
             category="data_feed",
@@ -111,6 +233,29 @@ def list_definitions() -> list[ComponentDef]:
                     name="poll_interval", type="float", required=False, default=1.0
                 ),
                 ParamDef(name="max_ticks", type="int", required=False),
+                ParamDef(name="max_retries", type="int", required=False, default=3),
+                ParamDef(
+                    name="backoff_seconds", type="float", required=False, default=0.5
+                ),
+                ParamDef(
+                    name="request_timeout",
+                    type="float|array|object",
+                    required=False,
+                    default=5.0,
+                    description="Total timeout seconds, [connect,read], or {connect,read}",
+                ),
+                ParamDef(
+                    name="connect_timeout",
+                    type="float",
+                    required=False,
+                    description="REST connect timeout seconds (overrides request_timeout)",
+                ),
+                ParamDef(
+                    name="read_timeout",
+                    type="float",
+                    required=False,
+                    description="REST read timeout seconds (overrides request_timeout)",
+                ),
             ],
         ),
         ComponentDef(
@@ -125,6 +270,10 @@ def list_definitions() -> list[ComponentDef]:
                     description="WebSocket endpoint yielding JSON with at least {price: float}",
                 ),
                 ParamDef(name="max_ticks", type="int", required=False),
+                ParamDef(name="max_reconnects", type="int", required=False, default=3),
+                ParamDef(
+                    name="backoff_seconds", type="float", required=False, default=0.5
+                ),
                 ParamDef(name="heartbeat_interval", type="float", required=False),
             ],
         ),
@@ -173,13 +322,49 @@ def list_definitions() -> list[ComponentDef]:
                 ParamDef(
                     name="read_timeout", type="float", required=False, default=30.0
                 ),
+                ParamDef(
+                    name="sse_base_url",
+                    type="str",
+                    required=False,
+                    default="https://92.newspush.eastmoney.com/sse",
+                ),
+                ParamDef(
+                    name="sse_headers",
+                    type="object",
+                    required=False,
+                    description="Custom SSE request headers; merges with defaults",
+                ),
                 ParamDef(name="snapshot_url", type="str", required=False),
                 ParamDef(name="snapshot_fields", type="str", required=False),
                 ParamDef(name="snapshot_ut", type="str", required=False),
                 ParamDef(
+                    name="snapshot_headers",
+                    type="object",
+                    required=False,
+                    description="Custom snapshot request headers; merges with defaults",
+                ),
+                ParamDef(
+                    name="snapshot_params",
+                    type="object",
+                    required=False,
+                    description="Additional snapshot query params",
+                ),
+                ParamDef(
                     name="price_scale", type="float", required=False, default=100.0
                 ),
             ],
+        ),
+        ComponentDef(
+            category="data_feed",
+            type="market_feed",
+            summary="Provider-agnostic pluggable quote feed (SSE/API/WebSocket/plugin)",
+            params=market_feed_params,
+        ),
+        ComponentDef(
+            category="data_feed",
+            type="eastmoney_sse_ext",
+            summary="Legacy alias of market_feed (kept for compatibility)",
+            params=market_feed_params,
         ),
         ComponentDef(
             category="strategy",
@@ -190,6 +375,13 @@ def list_definitions() -> list[ComponentDef]:
                 ParamDef(name="short_window", type="int", default=5, required=False),
                 ParamDef(name="long_window", type="int", default=20, required=False),
                 ParamDef(name="strategy_id", type="str", default="mac", required=False),
+                ParamDef(
+                    name="enabled",
+                    type="bool",
+                    default=True,
+                    required=False,
+                    description="Disable strategy when false",
+                ),
             ],
         ),
         ComponentDef(
@@ -204,6 +396,13 @@ def list_definitions() -> list[ComponentDef]:
                 ),
                 ParamDef(
                     name="strategy_id", type="str", default="uptrend", required=False
+                ),
+                ParamDef(
+                    name="enabled",
+                    type="bool",
+                    default=True,
+                    required=False,
+                    description="Disable strategy when false",
                 ),
             ],
         ),
@@ -223,6 +422,13 @@ def list_definitions() -> list[ComponentDef]:
                     required=False,
                     default={},
                     description="Keyword args passed to plugin strategy constructor",
+                ),
+                ParamDef(
+                    name="enabled",
+                    type="bool",
+                    default=True,
+                    required=False,
+                    description="Disable strategy when false",
                 ),
             ],
         ),

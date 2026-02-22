@@ -41,6 +41,7 @@ def _state() -> BotState:
         authed_user_ids=set(),
         pending_run=set(),
         subscriptions={},
+        draft_configs={},
     )
 
 

@@ -9,7 +9,6 @@ ping/pong and reconnection handling.
 import asyncio
 import inspect
 import json
-import time
 from datetime import datetime
 from typing import Any, Callable, Optional
 
@@ -49,17 +48,23 @@ class WebSocketJSONFeed(DataFeed):
         self.max_reconnects = max_reconnects
         self._connect = connect or websockets.connect  # type: ignore[attr-defined]
         self.heartbeat_interval = heartbeat_interval
+        self._ws: Any = None
+        self._ws_context: Any = None
 
     @staticmethod
-    def _resolve_loop(loop: Optional[asyncio.AbstractEventLoop]) -> tuple[asyncio.AbstractEventLoop, bool]:
+    def _resolve_loop(
+        loop: Optional[asyncio.AbstractEventLoop],
+    ) -> tuple[asyncio.AbstractEventLoop, bool]:
         if loop is not None:
             return loop, False
         return asyncio.new_event_loop(), True
 
     def prime(self) -> None:
         self._ticks = 0
+        self._close_ws_sync()
 
     def on_stop(self) -> None:
+        self._close_ws_sync()
         if self._owns_loop and not self.loop.is_closed():
             self.loop.close()
 
@@ -91,15 +96,8 @@ class WebSocketJSONFeed(DataFeed):
         attempts = 0
         while attempts <= self.max_reconnects:
             try:
-                ws_ctx = self._connect(self.url)
-                if asyncio.iscoroutine(ws_ctx):
-                    ws_ctx = await ws_ctx
-                if hasattr(ws_ctx, "__aenter__"):
-                    async with ws_ctx as ws:  # type: ignore[misc]
-                        raw = await self._recv_with_heartbeat(ws)
-                else:
-                    ws = ws_ctx
-                    raw = await self._recv_with_heartbeat(ws)  # type: ignore[union-attr]
+                ws = await self._ensure_ws()
+                raw = await self._recv_with_heartbeat(ws)
 
                 payload = self.parser(raw)
                 price = payload["price"]
@@ -119,10 +117,13 @@ class WebSocketJSONFeed(DataFeed):
                 return
             except Exception as exc:
                 attempts += 1
+                await self._close_ws_async()
                 if attempts > self.max_reconnects:
-                    raise FeedError(f"WebSocket connection failed after {self.max_reconnects} attempts") from exc
+                    raise FeedError(
+                        f"WebSocket connection failed after {self.max_reconnects} attempts"
+                    ) from exc
                 delay = self.backoff_seconds * (2 ** (attempts - 1))
-                time.sleep(delay)
+                await asyncio.sleep(delay)
 
     @staticmethod
     def _default_parser(raw: Any) -> dict:
@@ -140,6 +141,46 @@ class WebSocketJSONFeed(DataFeed):
             except Exception:
                 pass
         return await ws.recv()
+
+    async def _ensure_ws(self) -> Any:
+        if self._ws is not None:
+            return self._ws
+        ws_ctx = self._connect(self.url)
+        if inspect.isawaitable(ws_ctx):
+            ws_ctx = await ws_ctx
+        if hasattr(ws_ctx, "__aenter__"):
+            self._ws_context = ws_ctx
+            self._ws = await ws_ctx.__aenter__()
+            return self._ws
+        self._ws = ws_ctx
+        return self._ws
+
+    async def _close_ws_async(self) -> None:
+        ws = self._ws
+        ws_ctx = self._ws_context
+        self._ws = None
+        self._ws_context = None
+        if ws_ctx is not None and hasattr(ws_ctx, "__aexit__"):
+            await ws_ctx.__aexit__(None, None, None)
+            return
+        if ws is None:
+            return
+        close = getattr(ws, "close", None)
+        if callable(close):
+            result = close()
+            if inspect.isawaitable(result):
+                await result
+
+    def _close_ws_sync(self) -> None:
+        if self.loop.is_closed() or self.loop.is_running():
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            return
+        self.loop.run_until_complete(self._close_ws_async())
 
 
 __all__ = ["WebSocketJSONFeed"]

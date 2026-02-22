@@ -3,8 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from pybt.data.local_csv import LocalCSVBarFeed, load_bars_from_csv
-
+from pybt.data.local_csv import (
+    LocalCSVBarFeed,
+    load_bars_from_csv,
+    load_bars_from_parquet,
+)
 
 CSV_CONTENT = """date,open,high,low,close,volume,amount
 2024-01-01,10,11,9,10.5,1000,10000
@@ -71,3 +74,47 @@ def test_local_csv_feed_has_next_is_side_effect_free(tmp_path: Path) -> None:
     bus.dispatch()
     assert len(captured) == 1
     assert captured[0].timestamp == datetime(2024, 1, 1)
+
+
+def test_local_csv_feed_rejects_unsupported_suffix(tmp_path: Path) -> None:
+    path = tmp_path / "AAA" / "Bar.txt"
+    path.parent.mkdir(parents=True)
+    path.write_text("dummy", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsupported bar file extension"):
+        LocalCSVBarFeed(path)
+
+
+def test_load_bars_from_parquet_converts_string_dates_before_filtering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pd = pytest.importorskip("pandas")
+    df = pd.DataFrame(
+        [
+            {
+                "date": "2024-01-01",
+                "open": 10,
+                "high": 11,
+                "low": 9,
+                "close": 10.5,
+                "volume": 1000,
+            },
+            {
+                "date": "2024-01-02",
+                "open": 10.5,
+                "high": 12,
+                "low": 10,
+                "close": 11,
+                "volume": 1200,
+            },
+        ]
+    )
+    monkeypatch.setattr(pd, "read_parquet", lambda _path: df)
+
+    bars = load_bars_from_parquet(
+        tmp_path / "AAA" / "Bar.parquet",
+        start=datetime(2024, 1, 2),
+        end=datetime(2024, 1, 2),
+    )
+    assert len(bars) == 1
+    assert bars[0].timestamp == datetime(2024, 1, 2)

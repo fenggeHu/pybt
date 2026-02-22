@@ -180,3 +180,73 @@ def test_eastmoney_sse_feed_updates_seq_after_next_seq() -> None:
     assert len(sse_urls) >= 2
     assert "seq=0" in sse_urls[0]
     assert "seq=777" in sse_urls[1]
+
+
+def test_eastmoney_sse_feed_allows_configuring_sse_base_url_and_headers() -> None:
+    called: dict[str, object] = {}
+
+    def fake_get(url: str, **kwargs):
+        called["url"] = url
+        called["headers"] = kwargs.get("headers", {})
+        return _FakeResponse(['data: {"content":{"price":8.8}}'])
+
+    feed = EastmoneySSEFeed(
+        symbol="600000",
+        get_request=fake_get,
+        max_ticks=1,
+        backoff_seconds=0.0,
+        sse_base_url="https://example.com/custom_sse",
+        sse_headers={"X-Test": "sse"},
+    )
+    bus = EventBus()
+    feed.bind(bus)
+    bus.subscribe(MarketEvent, lambda _ev: None)
+
+    feed.prime()
+    feed.next()
+
+    assert str(called["url"]).startswith("https://example.com/custom_sse?")
+    headers = called["headers"]
+    assert isinstance(headers, dict)
+    assert headers.get("X-Test") == "sse"
+    assert "Referer" in headers
+
+
+def test_eastmoney_sse_feed_allows_configuring_snapshot_headers_and_params() -> None:
+    snapshot_call: dict[str, object] = {}
+
+    def fake_get(url: str, **kwargs):
+        if url == "https://example.com/sse":
+            return _FakeResponse(['data: {"type":"next_seq","seq":2,"content":""}'])
+        snapshot_call["url"] = url
+        snapshot_call["params"] = kwargs.get("params", {})
+        snapshot_call["headers"] = kwargs.get("headers", {})
+        return _FakeResponse([], json_payload={"data": {"f43": 1001}})
+
+    feed = EastmoneySSEFeed(
+        symbol="600000",
+        sse_url="https://example.com/sse",
+        snapshot_url="https://example.com/snapshot",
+        get_request=fake_get,
+        max_ticks=1,
+        backoff_seconds=0.0,
+        max_reconnects=0,
+        snapshot_headers={"X-Snap": "1"},
+        snapshot_params={"fltt": "2"},
+    )
+    bus = EventBus()
+    feed.bind(bus)
+    bus.subscribe(MarketEvent, lambda _ev: None)
+
+    feed.prime()
+    feed.next()
+
+    assert snapshot_call["url"] == "https://example.com/snapshot"
+    params = snapshot_call["params"]
+    headers = snapshot_call["headers"]
+    assert isinstance(params, dict)
+    assert params.get("fltt") == "2"
+    assert params.get("secid") == "1.600000"
+    assert isinstance(headers, dict)
+    assert headers.get("X-Snap") == "1"
+    assert headers.get("Accept") == "application/json"

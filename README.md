@@ -7,7 +7,7 @@ PyBT 是一个以事件总线为核心的 Python 回测框架，强调组件解�
 核心能力
 --------
 - 事件驱动引擎：`BacktestEngine` + 同步 FIFO `EventBus`，统一调度 `MarketEvent/SignalEvent/OrderEvent/FillEvent/MetricsEvent`。
-- 数据源：`InMemoryBarFeed`、`LocalCSVBarFeed`（CSV/Parquet）、`RESTPollingFeed`、`WebSocketJSONFeed`、`ADataLiveFeed`、`EastmoneySSEFeed`。
+- 数据源：`InMemoryBarFeed`、`LocalCSVBarFeed`（CSV/Parquet）、`RESTPollingFeed`、`WebSocketJSONFeed`、`ADataLiveFeed`、`EastmoneySSEFeed`、`ComposableQuoteFeed`（插件链）。
 - 策略：`MovingAverageCrossStrategy`（双均线）与 `UptrendBreakoutStrategy`（趋势突破）。
 - 执行：`ImmediateExecutionHandler` 支持滑点、佣金、部分成交、行情陈旧保护、成交时机（`current_close`/`next_open`）。
 - 风控：`MaxPositionRisk`、`BuyingPowerRisk`、`ConcentrationRisk`、`PriceBandRisk`。
@@ -33,14 +33,27 @@ pip install -e .[app]
 
 生产运行建议
 -----------
-生产环境建议统一走**配置驱动**（server + telegram-bot + JSON 配置），避免在代码中写死策略参数和行情源。
+生产环境建议统一走**配置驱动**（server + telegram-bot + JSON/JSONC 配置），避免在代码中写死策略参数和行情源。
 推荐直接使用下文的一键启停脚本和 A 股实盘配置。
 
 配置驱动运行
 ------------
+`load_engine_from_json()` 支持：
+- `.json` / `.jsonc`（允许 `//`、`/* */` 注释与尾逗号）；
+- 局部 `$ref` 组合（可把数据源、策略、执行、风控拆成独立文件再组装）。
+
+推荐目录规划：
+- `configs/data_feeds/*.jsonc`
+- `configs/strategies/*.jsonc`
+- `configs/portfolios/*.jsonc`
+- `configs/executions/*.jsonc`
+- `configs/risk/*.jsonc`
+- `configs/reporters/*.jsonc`
+- `configs/profiles/*.jsonc`（组合入口，可直接用于 `--run-config`）
+
 `pybt.configuration.loader` 当前支持以下组件类型：
 
-- `data_feed.type`: `local_csv` / `local_file` / `inmemory` / `rest` / `websocket` / `adata` / `eastmoney_sse`
+- `data_feed.type`: `local_csv` / `local_file` / `inmemory` / `rest` / `websocket` / `adata` / `eastmoney_sse` / `market_feed` / `eastmoney_sse_ext`（兼容别名）
 - `strategies[].type`: `moving_average` / `uptrend` / `plugin`
 - `portfolio.type`: `naive`
 - `execution.type`: `immediate`
@@ -48,6 +61,20 @@ pip install -e .[app]
 - `reporters[].type`: `equity` / `detailed` / `tradelog`
 
 若启用了 server，可通过 `GET /definitions`（需 `X-API-Key`）获取完整组件定义与参数元数据，便于 UI 或 Bot 做自动提示。
+
+`market_feed` 默认推荐**简化配置**：只写 `source`（如 `sse`/`websocket`）和可选 `url`；
+需要精细控制时再使用 `sources` 插件链（`sse` + `snapshot_api` + `websocket` + 自定义 `plugin`）。`eastmoney_sse_ext` 作为兼容别名保留。
+
+最简实时行情示例：
+
+```json
+{
+  "type": "market_feed",
+  "symbol": "600000",
+  "source": "sse",
+  "snapshot_fallback": true
+}
+```
 
 最小配置示例：
 
@@ -151,6 +178,19 @@ export PYBT_SERVER_URL=http://127.0.0.1:8765
 pybt-bot
 ```
 
+Telegram 命令化配置（数据源/策略）：
+- `/definitions [data_feed|strategy]`：查看支持的组件类型。
+- `/draft_new [symbol]`：创建/重置当前草稿配置（按用户隔离）。
+- `/set_feed <type> key=value...` 或 `/set_feed {"type":"...","...":...}`：设置数据源。
+- `/add_strategy <type> key=value...`：新增策略。
+- `/set_strategy <index> <type> key=value...`：替换某条策略。
+- `/del_strategy <index>`：删除某条策略。
+- `/list_strategy`：列出草稿里的策略及 ON/OFF 状态。
+- `/strategy on/off <index|strategy_id|all>`：启用/停用策略。
+- `/draft_show`：查看当前草稿 JSON。
+- `/save_draft <name.json> [force]`：保存到 server 配置中心。
+- `/run_draft`：直接以内联配置启动运行（无需先保存）。
+
 一键启动（生产链路）
 ------------------
 脚本会启动 server + telegram-bot，并可选自动提交配置后直接开跑。
@@ -163,7 +203,7 @@ export TELEGRAM_BOT_TOKEN=your_token
 export TELEGRAM_ADMIN_PASSWORD=your_password
 export PYBT_BASE_DIR=$HOME/.pybt
 
-bash scripts/start_realtime_system.sh --detach --run-config ./prod_live.json
+bash scripts/start_realtime_system.sh --detach --run-config ./configs/profiles/ashare_live_prod.jsonc
 ```
 
 A股生产推荐（直接用生产配置）：
@@ -186,7 +226,7 @@ bash scripts/start_ashare_prod.sh ./configs/your_ashare_live.json
 启动（前台，便于观察日志）：
 
 ```bash
-bash scripts/start_realtime_system.sh --run-config ./prod_live.json
+bash scripts/start_realtime_system.sh --run-config ./configs/profiles/ashare_live_prod.jsonc
 ```
 
 停止（根据 pid 文件优雅退出）：
@@ -201,9 +241,10 @@ bash scripts/stop_realtime_system.sh
 bash scripts/start_realtime_system.sh --check
 ```
 
-生产配置文件：
-- `configs/ashare_live_prod.json`
-- `configs/eastmoney_sse_prod.json`
+生产配置文件（推荐 profile JSONC）：
+- `configs/profiles/ashare_live_prod.jsonc`
+- `configs/profiles/market_feed_prod.jsonc`
+- `configs/profiles/eastmoney_sse_prod.jsonc`
 
 项目结构
 --------
@@ -237,4 +278,5 @@ mypy pybt
 - `execution.fill_timing="current_close"` 默认值更偏向教学/回放；若追求更现实的时序，建议使用 `next_open` 以降低未来函数偏差。
 - `ADataLiveFeed` 依赖 `adata`，未安装时请避免使用 `data_feed.type="adata"`。
 - `EastmoneySSEFeed` 基于网页 SSE 推送通道，可能受网站风控策略、连接节流和参数变化影响，生产上建议准备备用行情源和告警。
+- 如需降低连接抖动和切换供应商，可使用 `data_feed.type="market_feed"`，通过 `sources` 插件链（`sse`/`snapshot_api`/`websocket`/`plugin`）及其参数在配置里调整行为。
 - 内置策略与组合/风控实现偏简化，生产环境建议扩展交易成本、容量约束与更严格的数据校验。

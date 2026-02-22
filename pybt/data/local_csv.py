@@ -84,6 +84,12 @@ def load_bars_from_parquet(
     missing = required - set(cast(Any, df).columns)
     if missing:
         raise ValueError(f"Parquet missing required columns: {missing}")
+    date_col = cast(Any, pd_local.to_datetime(cast(Any, df)["date"], errors="coerce"))
+    if cast(Any, date_col).isna().any():
+        raise ValueError("Parquet 'date' contains invalid datetime values")
+    if hasattr(cast(Any, date_col).dt, "tz") and cast(Any, date_col).dt.tz is not None:
+        date_col = cast(Any, date_col).dt.tz_localize(None)
+    df = cast(Any, df).assign(date=date_col)
     if start is not None:
         df = cast(Any, df)[cast(Any, df)["date"] >= start]
     if end is not None:
@@ -138,9 +144,18 @@ class LocalCSVBarFeed(DataFeed):
         self._primed: bool = False
 
     def _load(self) -> List[Bar]:
-        if self._path.suffix.lower() == ".csv":
-            return load_bars_from_csv(self._path, symbol=self._symbol, start=self._start, end=self._end)
-        return load_bars_from_parquet(self._path, symbol=self._symbol, start=self._start, end=self._end)
+        suffix = self._path.suffix.lower()
+        if suffix == ".csv":
+            return load_bars_from_csv(
+                self._path, symbol=self._symbol, start=self._start, end=self._end
+            )
+        if suffix in {".parquet", ".pq"}:
+            return load_bars_from_parquet(
+                self._path, symbol=self._symbol, start=self._start, end=self._end
+            )
+        raise ValueError(
+            f"Unsupported bar file extension: '{self._path.suffix}'. Expected .csv or .parquet"
+        )
 
     def prime(self) -> None:
         self._idx = 0

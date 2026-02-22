@@ -11,7 +11,7 @@ Usage: bash scripts/start_realtime_system.sh [options]
 Options:
   --check                 Validate environment and exit
   --detach                Run server and bot in background and exit
-  --run-config PATH       After startup, submit config JSON and start one run
+  --run-config PATH       After startup, submit config JSON/JSONC and start one run
   --host HOST             Override PYBT_SERVER_HOST
   --port PORT             Override PYBT_SERVER_PORT
   --base-dir DIR          Override PYBT_BASE_DIR
@@ -236,11 +236,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from pybt.configuration import load_config_dict
+
 config_path = pathlib.Path(sys.argv[1])
 base_url = f"http://{os.environ['PYBT_SERVER_HOST']}:{os.environ['PYBT_SERVER_PORT']}"
 api_key = os.environ["PYBT_API_KEY"]
 
-cfg = json.loads(config_path.read_text(encoding="utf-8"))
+cfg = load_config_dict(config_path)
 
 def request_json(method: str, path: str, body: dict | None = None) -> dict:
     url = base_url + path

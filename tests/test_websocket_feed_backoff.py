@@ -43,6 +43,16 @@ class _AwaitablePingWS(_FakeWS):
         return _ping()
 
 
+class _SequenceWS(_FakeWS):
+    def __init__(self, payloads: list[dict]) -> None:
+        super().__init__(payloads[0])
+        self._payloads = payloads
+
+    async def recv(self) -> str:
+        payload = self._payloads.pop(0)
+        return json.dumps(payload)
+
+
 def test_websocket_feed_reconnects_with_backoff(monkeypatch):
     attempts = 0
     loop = asyncio.new_event_loop()
@@ -182,3 +192,75 @@ def test_websocket_feed_next_fails_inside_running_loop():
             feed.on_stop()
 
     asyncio.run(_runner())
+
+
+def test_websocket_feed_reuses_connection_across_ticks():
+    calls = {"n": 0}
+    loop = asyncio.new_event_loop()
+
+    async def fake_connect(_url: str):
+        calls["n"] += 1
+        return _SequenceWS([{"price": 1.0}, {"price": 2.0}])
+
+    feed = WebSocketJSONFeed(
+        symbol="AAA",
+        url="ws://example.com",
+        max_ticks=2,
+        connect=fake_connect,
+        backoff_seconds=0.0,
+        loop=loop,
+    )
+    bus = EventBus()
+    feed.bind(bus)
+    captured: list[MarketEvent] = []
+    bus.subscribe(MarketEvent, captured.append)
+
+    try:
+        feed.prime()
+        feed.next()
+        bus.dispatch()
+        feed.next()
+        bus.dispatch()
+    finally:
+        feed.on_stop()
+        loop.close()
+
+    assert calls["n"] == 1
+    assert [ev.fields["close"] for ev in captured] == [1.0, 2.0]
+
+
+def test_websocket_feed_backoff_uses_async_sleep(monkeypatch):
+    attempts = {"n": 0}
+    loop = asyncio.new_event_loop()
+    sleep_calls: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+
+    async def fake_connect(_url: str):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise RuntimeError("connect fail")
+        return _FakeWS({"price": 3.21})
+
+    monkeypatch.setattr("pybt.data.websocket_feed.asyncio.sleep", fake_sleep)
+
+    feed = WebSocketJSONFeed(
+        symbol="AAA",
+        url="ws://example.com",
+        max_ticks=1,
+        connect=fake_connect,
+        max_reconnects=2,
+        backoff_seconds=0.25,
+        loop=loop,
+    )
+    feed.bind(EventBus())
+    try:
+        feed.prime()
+        feed.next()
+    finally:
+        feed.on_stop()
+        loop.close()
+
+    assert attempts["n"] == 2
+    assert sleep_calls == [0.25]
