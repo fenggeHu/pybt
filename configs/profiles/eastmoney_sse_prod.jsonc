@@ -1,0 +1,29 @@
+{
+  // Purpose: production baseline profile (Eastmoney SSE feed)
+  "name": "eastmoney-sse-prod",
+  "plugin_registry": "../../plugins/plugin.jsonc",
+  "data_feed": {
+    "$ref": "../data_feeds/eastmoney_600000_sse.jsonc"
+  },
+  "strategies": [
+    {
+      "$ref": "../strategies/moving_average_eastmoney_mac.jsonc"
+    }
+  ],
+  "portfolio": {
+    "$ref": "../portfolios/naive_default.jsonc"
+  },
+  "execution": {
+    "$ref": "../executions/immediate_next_open.jsonc"
+  },
+  "risk": [
+    {
+      "$ref": "../risk/max_position_10000.jsonc"
+    }
+  ],
+  "reporters": [
+    {
+      "$ref": "../reporters/equity_default.jsonc"
+    }
+  ]
+}

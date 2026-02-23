@@ -3,6 +3,7 @@
 from .definitions import ComponentDef, ParamDef, iter_definition_dicts, list_definitions
 from .config_file import load_config_dict, load_config_file, loads_jsonc
 from .loader import load_engine_from_dict, load_engine_from_json
+from .plugins import PluginConfigError, PluginLoader, PluginRegistry
 
 __all__ = [
     "ComponentDef",
@@ -14,4 +15,7 @@ __all__ = [
     "loads_jsonc",
     "load_engine_from_dict",
     "load_engine_from_json",
+    "PluginRegistry",
+    "PluginLoader",
+    "PluginConfigError",
 ]

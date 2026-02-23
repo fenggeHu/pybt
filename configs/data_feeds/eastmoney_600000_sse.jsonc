@@ -1,0 +1,9 @@
+{
+  // Eastmoney plugin + SSE transport
+  "plugin": "eastmoney_marketdata",
+  "params": {
+    "symbol": "600000",
+    "transport": "sse",
+    "snapshot_fallback": true
+  }
+}

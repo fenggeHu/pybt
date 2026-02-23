@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from datetime import datetime
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -6,36 +9,51 @@ from apps.server.app import create_app
 from apps.server.settings import ServerSettings
 
 
+def _plugin_registry_path() -> str:
+    return str(Path(__file__).resolve().parent.parent / "plugins" / "plugin.jsonc")
+
+
 def _valid_config() -> dict:
     return {
         "name": "validate-demo",
+        "plugin_registry": _plugin_registry_path(),
         "data_feed": {
-            "type": "inmemory",
-            "bars": [
-                {
-                    "symbol": "AAA",
-                    "timestamp": datetime(2024, 1, 1, 9, 30).isoformat(),
-                    "open": 100,
-                    "high": 101,
-                    "low": 99,
-                    "close": 100.5,
-                    "volume": 1000,
-                    "amount": 100500,
-                }
-            ],
+            "plugin": "inmemory_feed",
+            "params": {
+                "bars": [
+                    {
+                        "symbol": "AAA",
+                        "timestamp": datetime(2024, 1, 1, 9, 30).isoformat(),
+                        "open": 100,
+                        "high": 101,
+                        "low": 99,
+                        "close": 100.5,
+                        "volume": 1000,
+                        "amount": 100500,
+                    }
+                ]
+            },
         },
         "strategies": [
             {
-                "type": "moving_average",
-                "symbol": "AAA",
-                "short_window": 2,
-                "long_window": 3,
+                "plugin": "moving_average",
+                "params": {
+                    "symbol": "AAA",
+                    "short_window": 2,
+                    "long_window": 3,
+                },
             }
         ],
-        "portfolio": {"type": "naive", "lot_size": 100, "initial_cash": 100000},
-        "execution": {"type": "immediate", "slippage": 0.0, "commission": 0.0},
-        "risk": [{"type": "max_position", "limit": 1000}],
-        "reporters": [{"type": "equity"}],
+        "portfolio": {
+            "plugin": "naive_portfolio",
+            "params": {"lot_size": 100, "initial_cash": 100000},
+        },
+        "execution": {
+            "plugin": "immediate_execution",
+            "params": {"slippage": 0.0, "commission": 0.0},
+        },
+        "risk": [{"plugin": "max_position_risk", "params": {"limit": 1000}}],
+        "reporters": [{"plugin": "equity_reporter"}],
     }
 
 

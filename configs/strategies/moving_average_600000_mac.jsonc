@@ -1,0 +1,10 @@
+{
+  "plugin": "moving_average",
+  "params": {
+    "symbol": "600000",
+    "short_window": 5,
+    "long_window": 20,
+    "strategy_id": "mac-600000"
+  },
+  "enabled": true
+}

@@ -1,0 +1,8 @@
+{
+  "plugin": "immediate_execution",
+  "params": {
+    "slippage": 0.0,
+    "commission": 0.0,
+    "fill_timing": "next_open"
+  }
+}

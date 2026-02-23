@@ -1,0 +1,32 @@
+{
+  // Purpose: connectivity validation (fetch 1 tick then exit)
+  "name": "sina-hq-api-live-verify-once",
+  "plugin_registry": "../../plugins/plugin.jsonc",
+  "data_feed": {
+    "$ref": "../../configs/data_feeds/sina_hq_api_live.jsonc",
+    "params": {
+      "max_ticks": 1
+    }
+  },
+  "strategies": [
+    {
+      "$ref": "../../configs/strategies/moving_average_600000_mac.jsonc"
+    }
+  ],
+  "portfolio": {
+    "$ref": "../../configs/portfolios/naive_default.jsonc"
+  },
+  "execution": {
+    "$ref": "../../configs/executions/immediate_next_open.jsonc"
+  },
+  "risk": [
+    {
+      "$ref": "../../configs/risk/max_position_10000.jsonc"
+    }
+  ],
+  "reporters": [
+    {
+      "$ref": "../../configs/reporters/equity_default.jsonc"
+    }
+  ]
+}

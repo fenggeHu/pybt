@@ -1,0 +1,7 @@
+{
+  "plugin": "naive_portfolio",
+  "params": {
+    "lot_size": 100,
+    "initial_cash": 1000000
+  }
+}

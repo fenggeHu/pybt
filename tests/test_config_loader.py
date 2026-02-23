@@ -1,16 +1,16 @@
-from datetime import datetime
+from __future__ import annotations
+
+import json
 from pathlib import Path
 
 import pytest
 
 from pybt import load_engine_from_dict, load_engine_from_json
-from pybt.data.rest_feed import (
-    ComposableQuoteFeed,
-    EastmoneySSEExtendedFeed,
-    EastmoneySSEFeed,
-    RESTPollingFeed,
-)
-from pybt.data.websocket_feed import WebSocketJSONFeed
+from pybt.data.rest_feed import ComposableQuoteFeed, RESTPollingFeed
+
+
+def _plugin_registry_path() -> Path:
+    return Path(__file__).resolve().parent.parent / "plugins" / "plugin.jsonc"
 
 
 def _write_csv(tmp_path: Path) -> Path:
@@ -26,26 +26,59 @@ def _write_csv(tmp_path: Path) -> Path:
     return path
 
 
-def test_load_engine_from_json_runs_end_to_end(tmp_path: Path) -> None:
-    csv_path = _write_csv(tmp_path)
-    cfg = {
+def _base_config(csv_path: Path) -> dict:
+    return {
         "name": "cfg-demo",
-        "data_feed": {"type": "local_csv", "path": str(csv_path), "symbol": "AAA"},
+        "plugin_registry": str(_plugin_registry_path()),
+        "data_feed": {
+            "plugin": "local_csv_feed",
+            "params": {"path": str(csv_path), "symbol": "AAA"},
+        },
         "strategies": [
             {
-                "type": "moving_average",
-                "symbol": "AAA",
-                "short_window": 1,
-                "long_window": 2,
+                "plugin": "moving_average",
+                "params": {
+                    "symbol": "AAA",
+                    "short_window": 1,
+                    "long_window": 2,
+                },
             }
         ],
-        "portfolio": {"type": "naive", "lot_size": 100, "initial_cash": 10_000},
-        "execution": {"type": "immediate", "slippage": 0.0, "commission": 0.0},
-        "risk": [{"type": "max_position", "limit": 200}],
-        "reporters": [{"type": "equity", "initial_cash": 10_000}],
+        "portfolio": {
+            "plugin": "naive_portfolio",
+            "params": {"lot_size": 100, "initial_cash": 10_000},
+        },
+        "execution": {
+            "plugin": "immediate_execution",
+            "params": {"slippage": 0.0, "commission": 0.0},
+        },
+        "risk": [{"plugin": "max_position_risk", "params": {"limit": 200}}],
+        "reporters": [{"plugin": "equity_reporter", "params": {"initial_cash": 10_000}}],
     }
+
+
+def test_load_engine_from_dict_runs_end_to_end(tmp_path: Path) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = _base_config(csv_path)
+
+    engine = load_engine_from_dict(cfg)
+    engine.run()
+
+
+def test_load_engine_from_dict_uses_default_plugin_registry(tmp_path: Path) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = _base_config(csv_path)
+    cfg.pop("plugin_registry", None)
+
+    engine = load_engine_from_dict(cfg)
+    engine.run()
+
+
+def test_load_engine_from_json_runs_end_to_end(tmp_path: Path) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = _base_config(csv_path)
     cfg_path = tmp_path / "config.json"
-    cfg_path.write_text(__import__("json").dumps(cfg), encoding="utf-8")
+    cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
 
     engine = load_engine_from_json(cfg_path)
     engine.run()
@@ -58,10 +91,8 @@ def test_load_engine_from_json_supports_jsonc_refs(tmp_path: Path) -> None:
     (parts / "data_feed.jsonc").write_text(
         f"""
         {{
-          // local csv feed
-          "type": "local_csv",
-          "path": "{csv_path}",
-          "symbol": "AAA",
+          "plugin": "local_csv_feed",
+          "params": {{"path": "{csv_path}", "symbol": "AAA"}}
         }}
         """,
         encoding="utf-8",
@@ -69,11 +100,9 @@ def test_load_engine_from_json_supports_jsonc_refs(tmp_path: Path) -> None:
     (parts / "strategy_main.jsonc").write_text(
         """
         {
-          "type": "moving_average",
-          "symbol": "AAA",
-          "short_window": 1,
-          "long_window": 2,
-          "enabled": true,
+          "plugin": "moving_average",
+          "params": {"symbol": "AAA", "short_window": 1, "long_window": 2},
+          "enabled": true
         }
         """,
         encoding="utf-8",
@@ -81,27 +110,27 @@ def test_load_engine_from_json_supports_jsonc_refs(tmp_path: Path) -> None:
     (parts / "strategy_disabled.jsonc").write_text(
         """
         {
-          "type": "moving_average",
-          // missing symbol is fine because it is disabled and ignored
-          "enabled": false,
+          "plugin": "moving_average",
+          "enabled": false
         }
         """,
         encoding="utf-8",
     )
     profile = tmp_path / "profile.jsonc"
     profile.write_text(
-        """
-        {
+        f"""
+        {{
           "name": "jsonc-profile",
-          "data_feed": {"$ref": "./parts/data_feed.jsonc"},
+          "plugin_registry": "{_plugin_registry_path()}",
+          "data_feed": {{"$ref": "./parts/data_feed.jsonc"}},
           "strategies": [
-            {"$ref": "./parts/strategy_main.jsonc"},
-            {"$ref": "./parts/strategy_disabled.jsonc"},
+            {{"$ref": "./parts/strategy_main.jsonc"}},
+            {{"$ref": "./parts/strategy_disabled.jsonc"}}
           ],
-          "portfolio": {"type": "naive", "lot_size": 100, "initial_cash": 10000},
-          "execution": {"type": "immediate", "slippage": 0.0, "commission": 0.0},
-          "reporters": [{"type": "equity"}],
-        }
+          "portfolio": {{"plugin": "naive_portfolio", "params": {{"initial_cash": 10000}}}},
+          "execution": {{"plugin": "immediate_execution"}},
+          "reporters": [{{"plugin": "equity_reporter"}}]
+        }}
         """,
         encoding="utf-8",
     )
@@ -111,78 +140,17 @@ def test_load_engine_from_json_supports_jsonc_refs(tmp_path: Path) -> None:
     engine.run()
 
 
-def test_load_engine_from_dict_runs_end_to_end(tmp_path: Path) -> None:
-    csv_path = _write_csv(tmp_path)
-    cfg = {
-        "name": "cfg-demo",
-        "data_feed": {"type": "local_csv", "path": str(csv_path), "symbol": "AAA"},
-        "strategies": [
-            {
-                "type": "moving_average",
-                "symbol": "AAA",
-                "short_window": 1,
-                "long_window": 2,
-            }
-        ],
-        "portfolio": {"type": "naive", "lot_size": 100, "initial_cash": 10_000},
-        "execution": {"type": "immediate", "slippage": 0.0, "commission": 0.0},
-        "risk": [{"type": "max_position", "limit": 200}],
-        "reporters": [{"type": "equity"}],
-    }
-
-    engine = load_engine_from_dict(cfg)
-    engine.run()
-
-
-def test_load_engine_from_dict_supports_additional_risks(tmp_path: Path) -> None:
-    csv_path = _write_csv(tmp_path)
-    cfg = {
-        "name": "cfg-risks",
-        "data_feed": {"type": "local_csv", "path": str(csv_path), "symbol": "AAA"},
-        "strategies": [
-            {
-                "type": "moving_average",
-                "symbol": "AAA",
-                "short_window": 1,
-                "long_window": 2,
-            }
-        ],
-        "portfolio": {"type": "naive", "lot_size": 100, "initial_cash": 10_000},
-        "execution": {"type": "immediate", "slippage": 0.0, "commission": 0.0},
-        "risk": [
-            {"type": "price_band", "band_pct": 0.2},
-            {"type": "buying_power", "max_leverage": 1.0, "reserve_cash": 0.0},
-            {"type": "concentration", "max_fraction": 0.9},
-        ],
-        "reporters": [{"type": "equity"}],
-    }
-
-    engine = load_engine_from_dict(cfg)
-    engine.run()
-
-
 def test_load_engine_from_json_requires_keys(tmp_path: Path) -> None:
     cfg_path = tmp_path / "config.json"
     cfg_path.write_text("{}", encoding="utf-8")
     with pytest.raises(ValueError):
-        load_engine_from_json(cfg_path)
-
-
-def test_load_engine_from_json_requires_root_object(tmp_path: Path) -> None:
-    cfg_path = tmp_path / "config.json"
-    cfg_path.write_text("[]", encoding="utf-8")
-    with pytest.raises(ValueError, match="Config JSON must be an object"):
-        load_engine_from_json(cfg_path)
+        load_engine_from_json(cfg_path, plugin_registry_path=_plugin_registry_path())
 
 
 def test_load_engine_from_dict_requires_strategies_array(tmp_path: Path) -> None:
     csv_path = _write_csv(tmp_path)
-    cfg = {
-        "data_feed": {"type": "local_csv", "path": str(csv_path), "symbol": "AAA"},
-        "strategies": "not-an-array",
-        "portfolio": {"type": "naive"},
-        "execution": {"type": "immediate"},
-    }
+    cfg = _base_config(csv_path)
+    cfg["strategies"] = "not-an-array"
 
     with pytest.raises(ValueError, match="strategies must be an array"):
         load_engine_from_dict(cfg)
@@ -190,12 +158,8 @@ def test_load_engine_from_dict_requires_strategies_array(tmp_path: Path) -> None
 
 def test_load_engine_from_dict_requires_strategy_item_object(tmp_path: Path) -> None:
     csv_path = _write_csv(tmp_path)
-    cfg = {
-        "data_feed": {"type": "local_csv", "path": str(csv_path), "symbol": "AAA"},
-        "strategies": ["bad-item"],
-        "portfolio": {"type": "naive"},
-        "execution": {"type": "immediate"},
-    }
+    cfg = _base_config(csv_path)
+    cfg["strategies"] = ["bad-item"]
 
     with pytest.raises(ValueError, match=r"strategies\[0\] must be an object"):
         load_engine_from_dict(cfg)
@@ -203,72 +167,162 @@ def test_load_engine_from_dict_requires_strategy_item_object(tmp_path: Path) -> 
 
 def test_load_engine_from_dict_requires_reporters_array(tmp_path: Path) -> None:
     csv_path = _write_csv(tmp_path)
-    cfg = {
-        "data_feed": {"type": "local_csv", "path": str(csv_path), "symbol": "AAA"},
-        "strategies": [{"type": "moving_average", "symbol": "AAA"}],
-        "portfolio": {"type": "naive"},
-        "execution": {"type": "immediate"},
-        "reporters": {"type": "equity"},
-    }
+    cfg = _base_config(csv_path)
+    cfg["reporters"] = {"plugin": "equity_reporter"}
 
     with pytest.raises(ValueError, match="reporters must be an array"):
         load_engine_from_dict(cfg)
 
 
-def test_load_engine_from_dict_supports_eastmoney_sse_feed() -> None:
-    cfg = {
-        "name": "cfg-eastmoney",
-        "data_feed": {
-            "type": "eastmoney_sse",
-            "symbol": "600000",
-            "sse_url": "https://example.com/sse",
-            "max_ticks": 1,
-            "backoff_seconds": 0.1,
-            "max_reconnects": 1,
+def test_load_engine_from_dict_ignores_disabled_strategies(tmp_path: Path) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = _base_config(csv_path)
+    cfg["strategies"] = [
+        {"plugin": "moving_average", "enabled": False},
+        {
+            "plugin": "uptrend",
+            "params": {"symbol": "AAA", "window": 2},
         },
-        "strategies": [
-            {
-                "type": "moving_average",
-                "symbol": "600000",
-                "short_window": 1,
-                "long_window": 2,
-            }
-        ],
-        "portfolio": {"type": "naive", "lot_size": 100, "initial_cash": 10_000},
-        "execution": {"type": "immediate", "slippage": 0.0, "commission": 0.0},
-        "risk": [{"type": "max_position", "limit": 200}],
-        "reporters": [{"type": "equity"}],
+    ]
+
+    engine = load_engine_from_dict(cfg)
+    assert len(engine.strategies) == 1
+
+
+def test_load_engine_from_dict_rejects_plugin_kind_mismatch(tmp_path: Path) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = _base_config(csv_path)
+    cfg["data_feed"] = {"plugin": "moving_average", "params": {"symbol": "AAA"}}
+
+    with pytest.raises(ValueError, match="PLUGIN_KIND_MISMATCH"):
+        load_engine_from_dict(cfg)
+
+
+def test_load_engine_from_dict_rejects_unknown_plugin(tmp_path: Path) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = _base_config(csv_path)
+    cfg["data_feed"] = {"plugin": "does_not_exist"}
+
+    with pytest.raises(ValueError, match="PLUGIN_NOT_FOUND"):
+        load_engine_from_dict(cfg)
+
+
+def test_load_engine_from_dict_rejects_missing_required_plugin_param(
+    tmp_path: Path,
+) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = _base_config(csv_path)
+    cfg["strategies"] = [{"plugin": "moving_average", "params": {"short_window": 2}}]
+
+    with pytest.raises(ValueError, match="PLUGIN_INVALID_PARAMS"):
+        load_engine_from_dict(cfg)
+
+
+def test_load_engine_from_dict_rejects_empty_required_string_param(
+    tmp_path: Path,
+) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = _base_config(csv_path)
+    cfg["strategies"] = [{"plugin": "moving_average", "params": {"symbol": "   "}}]
+
+    with pytest.raises(ValueError, match="PLUGIN_INVALID_PARAMS"):
+        load_engine_from_dict(cfg)
+
+
+def test_load_engine_from_dict_coerces_typed_plugin_params(tmp_path: Path) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = _base_config(csv_path)
+    cfg["strategies"] = [
+        {
+            "plugin": "moving_average",
+            "params": {
+                "symbol": "AAA",
+                "short_window": "1",
+                "long_window": "2",
+            },
+        }
+    ]
+    cfg["portfolio"] = {
+        "plugin": "naive_portfolio",
+        "params": {"lot_size": "200", "initial_cash": "10000"},
     }
 
     engine = load_engine_from_dict(cfg)
-    assert isinstance(engine.data_feed, EastmoneySSEFeed)
+    assert len(engine.strategies) == 1
+    assert engine.portfolio.lot_size == 200
+    assert engine.portfolio.initial_cash == 10000.0
 
 
-def test_load_engine_from_dict_supports_rest_feed_advanced_options() -> None:
-    cfg = {
-        "name": "cfg-rest",
-        "data_feed": {
-            "type": "rest",
+def test_load_engine_from_dict_rejects_invalid_typed_plugin_param(
+    tmp_path: Path,
+) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = _base_config(csv_path)
+    cfg["strategies"] = [
+        {
+            "plugin": "moving_average",
+            "params": {
+                "symbol": "AAA",
+                "short_window": "not_int",
+                "long_window": 2,
+            },
+        }
+    ]
+
+    with pytest.raises(ValueError, match="PLUGIN_INVALID_PARAMS"):
+        load_engine_from_dict(cfg)
+
+
+def test_load_engine_from_dict_rejects_unknown_strict_plugin_param(
+    tmp_path: Path,
+) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = _base_config(csv_path)
+    cfg["strategies"] = [
+        {
+            "plugin": "moving_average",
+            "params": {
+                "symbol": "AAA",
+                "unknown_key": 1,
+            },
+        }
+    ]
+
+    with pytest.raises(ValueError, match="PLUGIN_INVALID_PARAMS"):
+        load_engine_from_dict(cfg)
+
+
+def test_load_engine_from_dict_suggests_closest_param_name(
+    tmp_path: Path,
+) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = _base_config(csv_path)
+    cfg["strategies"] = [
+        {
+            "plugin": "moving_average",
+            "params": {
+                "symbol": "AAA",
+                "short_windwo": 1,
+            },
+        }
+    ]
+
+    with pytest.raises(ValueError, match=r"did you mean 'short_window'"):
+        load_engine_from_dict(cfg)
+
+
+def test_load_engine_from_dict_supports_rest_polling_plugin(tmp_path: Path) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = _base_config(csv_path)
+    cfg["data_feed"] = {
+        "plugin": "rest_polling_feed",
+        "params": {
             "symbol": "AAA",
             "url": "https://example.com/quote",
-            "poll_interval": 0.5,
-            "max_ticks": 1,
             "max_retries": 5,
             "backoff_seconds": 0.2,
-            "connect_timeout": 1.0,
-            "read_timeout": 2.0,
+            "request_timeout": {"connect": 1.0, "read": 2.0},
         },
-        "strategies": [
-            {
-                "type": "moving_average",
-                "symbol": "AAA",
-                "short_window": 1,
-                "long_window": 2,
-            }
-        ],
-        "portfolio": {"type": "naive", "lot_size": 100, "initial_cash": 10_000},
-        "execution": {"type": "immediate", "slippage": 0.0, "commission": 0.0},
-        "reporters": [{"type": "equity"}],
     }
 
     engine = load_engine_from_dict(cfg)
@@ -278,366 +332,45 @@ def test_load_engine_from_dict_supports_rest_feed_advanced_options() -> None:
     assert engine.data_feed.request_timeout == (1.0, 2.0)
 
 
-def test_load_engine_from_dict_supports_rest_feed_timeout_array() -> None:
-    cfg = {
-        "name": "cfg-rest-timeout-array",
-        "data_feed": {
-            "type": "rest",
-            "symbol": "AAA",
-            "url": "https://example.com/quote",
-            "request_timeout": [0.8, 1.6],
-        },
-        "strategies": [{"type": "moving_average", "symbol": "AAA"}],
-        "portfolio": {"type": "naive"},
-        "execution": {"type": "immediate"},
-    }
-
-    engine = load_engine_from_dict(cfg)
-    assert isinstance(engine.data_feed, RESTPollingFeed)
-    assert engine.data_feed.request_timeout == (0.8, 1.6)
-
-
-def test_load_engine_from_dict_supports_rest_feed_timeout_object() -> None:
-    cfg = {
-        "name": "cfg-rest-timeout-object",
-        "data_feed": {
-            "type": "rest",
-            "symbol": "AAA",
-            "url": "https://example.com/quote",
-            "request_timeout": {"connect": 0.7, "read": 1.4},
-        },
-        "strategies": [{"type": "moving_average", "symbol": "AAA"}],
-        "portfolio": {"type": "naive"},
-        "execution": {"type": "immediate"},
-    }
-
-    engine = load_engine_from_dict(cfg)
-    assert isinstance(engine.data_feed, RESTPollingFeed)
-    assert engine.data_feed.request_timeout == (0.7, 1.4)
-
-
-def test_load_engine_from_dict_rejects_bad_rest_timeout_array_shape() -> None:
-    cfg = {
-        "name": "cfg-rest-timeout-invalid",
-        "data_feed": {
-            "type": "rest",
-            "symbol": "AAA",
-            "url": "https://example.com/quote",
-            "request_timeout": [1.0],
-        },
-        "strategies": [{"type": "moving_average", "symbol": "AAA"}],
-        "portfolio": {"type": "naive"},
-        "execution": {"type": "immediate"},
-    }
-
-    with pytest.raises(ValueError, match="request_timeout array"):
-        load_engine_from_dict(cfg)
-
-
-def test_load_engine_from_dict_supports_websocket_feed_advanced_options() -> None:
-    cfg = {
-        "name": "cfg-websocket",
-        "data_feed": {
-            "type": "websocket",
-            "symbol": "AAA",
-            "url": "wss://example.com/stream",
-            "max_ticks": 10,
-            "max_reconnects": 8,
-            "backoff_seconds": 1.25,
-            "heartbeat_interval": 3.0,
-        },
-        "strategies": [{"type": "moving_average", "symbol": "AAA"}],
-        "portfolio": {"type": "naive"},
-        "execution": {"type": "immediate"},
-    }
-
-    engine = load_engine_from_dict(cfg)
-    assert isinstance(engine.data_feed, WebSocketJSONFeed)
-    assert engine.data_feed.max_reconnects == 8
-    assert engine.data_feed.backoff_seconds == 1.25
-    assert engine.data_feed.heartbeat_interval == 3.0
-
-
-def test_load_engine_from_dict_supports_eastmoney_sse_ext_feed() -> None:
-    cfg = {
-        "name": "cfg-eastmoney-ext",
-        "data_feed": {
-            "type": "eastmoney_sse_ext",
-            "symbol": "600000",
-            "secid": "1.600000",
-            "max_ticks": 1,
-            "backoff_seconds": 0.1,
-            "max_reconnects": 1,
-            "reconnect_every_ticks": 50,
-            "heartbeat_timeout": 10.0,
-        },
-        "strategies": [
-            {
-                "type": "moving_average",
-                "symbol": "600000",
-                "short_window": 1,
-                "long_window": 2,
-            }
-        ],
-        "portfolio": {"type": "naive", "lot_size": 100, "initial_cash": 10_000},
-        "execution": {"type": "immediate", "slippage": 0.0, "commission": 0.0},
-        "risk": [{"type": "max_position", "limit": 200}],
-        "reporters": [{"type": "equity"}],
-    }
-
-    engine = load_engine_from_dict(cfg)
-    assert isinstance(engine.data_feed, EastmoneySSEExtendedFeed)
-
-
-def test_load_engine_from_dict_supports_market_feed_type() -> None:
-    cfg = {
-        "name": "cfg-market-feed",
-        "data_feed": {
-            "type": "market_feed",
-            "symbol": "600000",
-            "secid": "1.600000",
-            "max_ticks": 1,
-            "backoff_seconds": 0.1,
-            "max_reconnects": 1,
-            "sources": [
-                {"type": "sse", "sse_url": "https://example.com/sse"},
-                {
-                    "type": "snapshot_api",
-                    "snapshot_url": "https://example.com/snapshot",
-                    "on_demand_only": True,
-                },
-            ],
-        },
-        "strategies": [
-            {
-                "type": "moving_average",
-                "symbol": "600000",
-                "short_window": 1,
-                "long_window": 2,
-            }
-        ],
-        "portfolio": {"type": "naive", "lot_size": 100, "initial_cash": 10_000},
-        "execution": {"type": "immediate", "slippage": 0.0, "commission": 0.0},
-        "risk": [{"type": "max_position", "limit": 200}],
-        "reporters": [{"type": "equity"}],
-    }
-
-    engine = load_engine_from_dict(cfg)
-    assert isinstance(engine.data_feed, ComposableQuoteFeed)
-    assert isinstance(engine.data_feed, EastmoneySSEExtendedFeed)
-
-
-def test_load_engine_from_dict_supports_market_feed_simple_source() -> None:
-    cfg = {
-        "name": "cfg-market-feed-simple",
-        "data_feed": {
-            "type": "market_feed",
-            "symbol": "600000",
-            "source": "sse",
-            "snapshot_fallback": False,
-        },
-        "strategies": [{"type": "moving_average", "symbol": "600000"}],
-        "portfolio": {"type": "naive"},
-        "execution": {"type": "immediate"},
-    }
-
-    engine = load_engine_from_dict(cfg)
-    assert isinstance(engine.data_feed, ComposableQuoteFeed)
-    assert len(engine.data_feed._plugins) == 1
-
-
-def test_load_engine_from_dict_market_feed_simple_source_rejects_conflict() -> None:
-    cfg = {
-        "name": "cfg-market-feed-conflict",
-        "data_feed": {
-            "type": "market_feed",
-            "symbol": "600000",
-            "source": "sse",
-            "sources": [{"type": "sse"}],
-        },
-        "strategies": [{"type": "moving_average", "symbol": "600000"}],
-        "portfolio": {"type": "naive"},
-        "execution": {"type": "immediate"},
-    }
-
-    with pytest.raises(ValueError, match="data_feed.source"):
-        load_engine_from_dict(cfg)
-
-
-def test_load_engine_from_dict_market_feed_simple_websocket_requires_url() -> None:
-    cfg = {
-        "name": "cfg-market-feed-websocket",
-        "data_feed": {
-            "type": "market_feed",
-            "symbol": "600000",
-            "source": "websocket",
-        },
-        "strategies": [{"type": "moving_average", "symbol": "600000"}],
-        "portfolio": {"type": "naive"},
-        "execution": {"type": "immediate"},
-    }
-
-    with pytest.raises(ValueError, match="data_feed.url"):
-        load_engine_from_dict(cfg)
-
-
-def test_load_engine_from_dict_supports_market_feed_simple_api_source() -> None:
-    cfg = {
-        "name": "cfg-market-feed-simple-api",
-        "data_feed": {
-            "type": "market_feed",
-            "symbol": "600000",
-            "source": "api",
-            "url": "https://hq.sinajs.cn/list={symbol}",
-            "response_mode": "sina_hq",
-            "symbol_transform": "cn_prefix",
-            "field_map": {"price": "3", "volume": "8", "amount": "9"},
-        },
-        "strategies": [{"type": "moving_average", "symbol": "600000"}],
-        "portfolio": {"type": "naive"},
-        "execution": {"type": "immediate"},
-    }
-
-    engine = load_engine_from_dict(cfg)
-    assert isinstance(engine.data_feed, ComposableQuoteFeed)
-    assert len(engine.data_feed._plugins) == 1
-
-
-def test_load_engine_from_dict_market_feed_simple_api_requires_url() -> None:
-    cfg = {
-        "name": "cfg-market-feed-simple-api-no-url",
-        "data_feed": {
-            "type": "market_feed",
-            "symbol": "600000",
-            "source": "api",
-        },
-        "strategies": [{"type": "moving_average", "symbol": "600000"}],
-        "portfolio": {"type": "naive"},
-        "execution": {"type": "immediate"},
-    }
-
-    with pytest.raises(ValueError, match="api source requires 'url'"):
-        load_engine_from_dict(cfg)
-
-
-def test_load_engine_from_dict_supports_eastmoney_sse_ext_field_map_sources() -> None:
-    cfg = {
-        "name": "cfg-eastmoney-ext-field-map",
-        "data_feed": {
-            "type": "eastmoney_sse_ext",
-            "symbol": "600000",
-            "sources": [
-                {
-                    "type": "sse",
-                    "sse_url": "https://example.com/sse",
-                    "field_map": {
-                        "price": ["content.f2", "content.price"],
-                        "volume": "content.f5",
-                        "amount": "content.f6",
-                    },
-                },
-                {
-                    "type": "snapshot_api",
-                    "snapshot_url": "https://example.com/snapshot",
-                    "field_map": {
-                        "price": "data.f43",
-                        "price_scale": 100,
-                        "volume": "data.f47",
-                        "amount": "data.f48",
-                    },
-                },
-            ],
-        },
-        "strategies": [
-            {
-                "type": "moving_average",
-                "symbol": "600000",
-                "short_window": 1,
-                "long_window": 2,
-            }
-        ],
-        "portfolio": {"type": "naive", "lot_size": 100, "initial_cash": 10_000},
-        "execution": {"type": "immediate", "slippage": 0.0, "commission": 0.0},
-        "risk": [{"type": "max_position", "limit": 200}],
-        "reporters": [{"type": "equity"}],
-    }
-
-    engine = load_engine_from_dict(cfg)
-    assert isinstance(engine.data_feed, EastmoneySSEExtendedFeed)
-
-
-def test_load_engine_from_dict_rejects_invalid_snapshot_params_shape() -> None:
-    cfg = {
-        "name": "cfg-eastmoney-invalid",
-        "data_feed": {
-            "type": "eastmoney_sse_ext",
-            "symbol": "600000",
-            "snapshot_params": "bad",
-        },
-        "strategies": [
-            {
-                "type": "moving_average",
-                "symbol": "600000",
-                "short_window": 1,
-                "long_window": 2,
-            }
-        ],
-        "portfolio": {"type": "naive", "lot_size": 100, "initial_cash": 10_000},
-        "execution": {"type": "immediate", "slippage": 0.0, "commission": 0.0},
-        "reporters": [{"type": "equity"}],
-    }
-
-    with pytest.raises(ValueError, match="snapshot_params"):
-        load_engine_from_dict(cfg)
-
-
-def test_load_engine_from_dict_rejects_invalid_eastmoney_sources_shape() -> None:
-    cfg = {
-        "name": "cfg-eastmoney-invalid-sources",
-        "data_feed": {
-            "type": "eastmoney_sse_ext",
-            "symbol": "600000",
-            "sources": "bad",
-        },
-        "strategies": [
-            {
-                "type": "moving_average",
-                "symbol": "600000",
-                "short_window": 1,
-                "long_window": 2,
-            }
-        ],
-        "portfolio": {"type": "naive", "lot_size": 100, "initial_cash": 10_000},
-        "execution": {"type": "immediate", "slippage": 0.0, "commission": 0.0},
-        "reporters": [{"type": "equity"}],
-    }
-
-    with pytest.raises(ValueError, match="data_feed.sources"):
-        load_engine_from_dict(cfg)
-
-
-def test_load_engine_from_dict_ignores_disabled_strategies(tmp_path: Path) -> None:
+def test_load_engine_from_dict_supports_marketdata_plugins(tmp_path: Path) -> None:
     csv_path = _write_csv(tmp_path)
-    cfg = {
-        "name": "cfg-disabled-strategy",
-        "data_feed": {"type": "local_csv", "path": str(csv_path), "symbol": "AAA"},
-        "strategies": [
-            {
-                "type": "moving_average",
-                # Missing symbol on purpose. Disabled strategies should be ignored.
-                "enabled": False,
-            },
-            {
-                "type": "uptrend",
-                "symbol": "AAA",
-                "window": 2,
-                "enabled": True,
-            },
-        ],
-        "portfolio": {"type": "naive", "lot_size": 100, "initial_cash": 10_000},
-        "execution": {"type": "immediate", "slippage": 0.0, "commission": 0.0},
-        "reporters": [{"type": "equity"}],
+    cfg = _base_config(csv_path)
+    cfg["data_feed"] = {
+        "plugin": "eastmoney_marketdata",
+        "params": {"symbol": "600000", "transport": "api", "url": "https://example.com"},
+    }
+    engine = load_engine_from_dict(cfg)
+    assert isinstance(engine.data_feed, ComposableQuoteFeed)
+
+    cfg["data_feed"] = {
+        "plugin": "sina_marketdata",
+        "params": {"symbol": "600000"},
+    }
+    engine = load_engine_from_dict(cfg)
+    assert isinstance(engine.data_feed, ComposableQuoteFeed)
+
+
+def test_load_engine_from_dict_rejects_unsupported_transport(tmp_path: Path) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = _base_config(csv_path)
+    cfg["data_feed"] = {
+        "plugin": "sina_marketdata",
+        "params": {"symbol": "600000", "transport": "sse"},
     }
 
-    engine = load_engine_from_dict(cfg)
-    assert len(engine.strategies) == 1
+    with pytest.raises(ValueError, match="PLUGIN_UNSUPPORTED_TRANSPORT"):
+        load_engine_from_dict(cfg)
+
+
+def test_load_engine_from_dict_rejects_unknown_strict_feed_param(
+    tmp_path: Path,
+) -> None:
+    csv_path = _write_csv(tmp_path)
+    cfg = _base_config(csv_path)
+    cfg["data_feed"] = {
+        "plugin": "sina_marketdata",
+        "params": {"symbol": "600000", "transport": "api", "oops": 1},
+    }
+
+    with pytest.raises(ValueError, match="PLUGIN_INVALID_PARAMS"):
+        load_engine_from_dict(cfg)

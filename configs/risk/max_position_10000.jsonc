@@ -1,0 +1,6 @@
+{
+  "plugin": "max_position_risk",
+  "params": {
+    "limit": 10000
+  }
+}

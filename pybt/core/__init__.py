@@ -8,7 +8,16 @@ interfaces used throughout the system.
 from .engine import BacktestEngine, EngineConfig
 from .enums import Exposure, OrderSide, OrderType, SignalDirection
 from .event_bus import EventBus
-from .events import Event, FillEvent, MarketEvent, MetricsEvent, OrderEvent, SignalEvent
+from .events import (
+    DataSourceStatusEvent,
+    Event,
+    FillEvent,
+    MarketEvent,
+    MetricsEvent,
+    OrderEvent,
+    SignalEvent,
+    StrategyDebugEvent,
+)
 from .interfaces import (
     BusParticipant,
     DataFeed,
@@ -30,6 +39,8 @@ __all__ = [
     "OrderEvent",
     "FillEvent",
     "MetricsEvent",
+    "DataSourceStatusEvent",
+    "StrategyDebugEvent",
     "Exposure",
     "SignalDirection",
     "OrderSide",

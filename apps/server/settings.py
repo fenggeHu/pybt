@@ -14,6 +14,7 @@ class ServerSettings:
     base_dir: Path
     api_key: str
     max_concurrent_runs: int = 4
+    plugin_registry_path: Path | None = None
 
     @property
     def configs_dir(self) -> Path:

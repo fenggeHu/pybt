@@ -8,7 +8,13 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from pybt.configuration import load_engine_from_dict
-from pybt.core.events import FillEvent, MetricsEvent, SignalEvent
+from pybt.core.events import (
+    DataSourceStatusEvent,
+    FillEvent,
+    MetricsEvent,
+    SignalEvent,
+    StrategyDebugEvent,
+)
 from pybt.live.bridge import build_signal_notification_event
 
 
@@ -61,9 +67,23 @@ def run_worker(
                 }
             )
 
+        def on_source_status(ev: DataSourceStatusEvent) -> None:
+            et, ts, data = _serialize_event(ev)
+            event_q.put(
+                {"kind": "event", "event_type": et, "timestamp": ts, "data": data}
+            )
+
+        def on_strategy_debug(ev: StrategyDebugEvent) -> None:
+            et, ts, data = _serialize_event(ev)
+            event_q.put(
+                {"kind": "event", "event_type": et, "timestamp": ts, "data": data}
+            )
+
         engine.bus.subscribe(FillEvent, on_fill)
         engine.bus.subscribe(MetricsEvent, on_metrics)
         engine.bus.subscribe(SignalEvent, on_signal)
+        engine.bus.subscribe(DataSourceStatusEvent, on_source_status)
+        engine.bus.subscribe(StrategyDebugEvent, on_strategy_debug)
 
         engine.run()
 

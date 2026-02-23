@@ -5,6 +5,7 @@ Data feed implementations and adapters.
 from .adata_feed import ADataLiveFeed
 from .rest_feed import (
     ComposableQuoteFeed,
+    MultiSourceQuoteFeed,
     EastmoneySSEExtendedFeed,
     EastmoneySSEFeed,
     RESTPollingFeed,
@@ -18,6 +19,7 @@ __all__ = [
     "ADataLiveFeed",
     "EastmoneySSEFeed",
     "EastmoneySSEExtendedFeed",
+    "MultiSourceQuoteFeed",
     "ComposableQuoteFeed",
     "RESTPollingFeed",
     "WebSocketJSONFeed",

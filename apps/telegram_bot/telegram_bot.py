@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping, Optional
+from urllib.parse import quote, urlencode
 
 import httpx
 from pybt.live.notify import NotificationOutbox, OutboxNotifierWorker
@@ -130,6 +131,301 @@ def _format_summary_response(resp: Any) -> str:
     return "\n".join(lines)
 
 
+def _parse_bool_token(value: str) -> bool:
+    token = value.strip().lower()
+    if token in {"1", "true", "on", "yes"}:
+        return True
+    if token in {"0", "false", "off", "no"}:
+        return False
+    raise ValueError(f"Invalid boolean value: {value}")
+
+
+def _parse_filter_tokens(tokens: list[str]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for raw in tokens:
+        token = raw.strip()
+        if not token:
+            continue
+        if token == "debug":
+            out["include_debug"] = True
+            continue
+        if token == "nodebug":
+            out["include_debug"] = False
+            continue
+        if "=" not in token:
+            raise ValueError(f"Invalid token: {raw}")
+        key, value = token.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key in {"strategy_id", "symbol"}:
+            out[key] = value
+            continue
+        if key in {"since_seq", "limit"}:
+            out[key] = int(value)
+            continue
+        if key in {"include_debug", "debug"}:
+            out["include_debug"] = _parse_bool_token(value)
+            continue
+        raise ValueError(f"Unsupported filter key: {key}")
+    return out
+
+
+def _parse_plugins_tokens(tokens: list[str]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for raw in tokens:
+        token = raw.strip()
+        if not token:
+            continue
+        if "=" not in token:
+            short = token.lower()
+            # shorthand: /plugins strategy
+            if short in {"on", "enabled"}:
+                out["enabled"] = True
+                continue
+            if short in {"off", "disabled"}:
+                out["enabled"] = False
+                continue
+            out["kind"] = token
+            continue
+        key, value = token.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key == "kind":
+            out["kind"] = value
+            continue
+        if key == "enabled":
+            out["enabled"] = _parse_bool_token(value)
+            continue
+        raise ValueError(f"Unsupported filter key: {key}")
+    return out
+
+
+def _normalize_run_state(value: str) -> Optional[str]:
+    token = value.strip().lower()
+    if not token or token == "all":
+        return None
+    aliases = {
+        "start": "starting",
+        "starting": "starting",
+        "run": "running",
+        "running": "running",
+        "done": "completed",
+        "complete": "completed",
+        "completed": "completed",
+        "fail": "failed",
+        "failed": "failed",
+        "stop": "stopped",
+        "stopped": "stopped",
+    }
+    normalized = aliases.get(token)
+    if normalized is None:
+        raise ValueError(f"Unsupported run state: {value}")
+    return normalized
+
+
+def _parse_runs_tokens(tokens: list[str]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for raw in tokens:
+        token = raw.strip()
+        if not token:
+            continue
+        if "=" not in token:
+            out["state"] = _normalize_run_state(token)
+            continue
+        key, value = token.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key == "state":
+            out["state"] = _normalize_run_state(value)
+            continue
+        if key == "limit":
+            out["limit"] = max(1, min(int(value), 50))
+            continue
+        raise ValueError(f"Unsupported filter key: {key}")
+    return out
+
+
+def _filter_runs_for_display(
+    runs: list[dict[str, Any]],
+    *,
+    state: Optional[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    items = [r for r in runs if isinstance(r, dict)]
+    if state:
+        items = [r for r in items if str(r.get("state", "")).strip().lower() == state]
+        items.sort(key=lambda r: str(r.get("started_at", "")), reverse=True)
+        return items[:limit]
+
+    # Default view: prioritize active runs first, then recent.
+    items.sort(key=lambda r: str(r.get("started_at", "")), reverse=True)
+    rank = {"running": 0, "starting": 1, "failed": 2, "stopped": 3, "completed": 4}
+    items.sort(key=lambda r: rank.get(str(r.get("state", "")).strip().lower(), 99))
+    return items[:limit]
+
+
+def _run_filters_text(*, state: Optional[str], limit: int) -> str:
+    state_text = state if state else "all"
+    return f"Filters: state={state_text}, limit={limit}"
+
+
+def _format_compare_response(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return _fmt_short(payload)
+    comparison = payload.get("comparison")
+    if not isinstance(comparison, dict):
+        return _fmt_short(payload)
+
+    lines = [
+        f"Compare: {comparison.get('left_run_id')} -> {comparison.get('right_run_id')}",
+        (
+            f"State: {comparison.get('left_state')} -> {comparison.get('right_state')}, "
+            f"Seq: {comparison.get('left_last_seq')} -> {comparison.get('right_last_seq')}"
+        ),
+    ]
+    summary_delta = comparison.get("summary_delta")
+    if isinstance(summary_delta, dict) and summary_delta:
+        lines.append("Summary delta:")
+        for key in sorted(summary_delta.keys())[:12]:
+            lines.append(f"- {key}: {_fmt_short(summary_delta.get(key))}")
+    event_delta = comparison.get("event_count_delta")
+    if isinstance(event_delta, dict) and event_delta:
+        lines.append("Event delta:")
+        pairs = sorted(
+            event_delta.items(),
+            key=lambda one: abs(int(one[1])),
+            reverse=True,
+        )
+        for key, value in pairs[:12]:
+            lines.append(f"- {key}: {_fmt_short(value)}")
+    return "\n".join(lines)
+
+
+def _format_signal_items(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return _fmt_short(payload)
+    items = payload.get("signals")
+    if not isinstance(items, list):
+        return _fmt_short(payload)
+    if not items:
+        return "No signal/debug events matched."
+
+    run_id = _fmt_short(payload.get("run_id"))
+    last_seq = _fmt_short(payload.get("last_seq"))
+    lines = [f"Run: {run_id}", f"Last seq: {last_seq}", f"Items: {len(items)}"]
+    for one in items[:20]:
+        if not isinstance(one, dict):
+            continue
+        et = str(one.get("event_type", "Event"))
+        if et == "NotificationIntentEvent":
+            lines.append(
+                (
+                    f"- SIGNAL seq={one.get('seq')} strategy={one.get('strategy_id')} "
+                    f"symbol={one.get('symbol')} dir={one.get('direction')} "
+                    f"strength={one.get('strength')} msg={one.get('message')}"
+                )
+            )
+        elif et == "StrategyDebugEvent":
+            lines.append(
+                (
+                    f"- DEBUG seq={one.get('seq')} strategy={one.get('strategy_id')} "
+                    f"symbol={one.get('symbol')} stage={one.get('stage')} "
+                    f"msg={one.get('message')}"
+                )
+            )
+        else:
+            lines.append(
+                f"- {et} seq={one.get('seq')} strategy={one.get('strategy_id')} symbol={one.get('symbol')}"
+            )
+    return "\n".join(lines)
+
+
+def _format_plugins(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return _fmt_short(payload)
+    items = payload.get("plugins")
+    if not isinstance(items, list):
+        return _fmt_short(payload)
+    if not items:
+        return "No plugins matched."
+    lines = [
+        f"Registry: {_fmt_short(payload.get('registry_path'))}",
+        f"Plugins: {len(items)}",
+    ]
+    for item in items[:80]:
+        if not isinstance(item, dict):
+            continue
+        status = "ON" if bool(item.get("enabled", True)) else "OFF"
+        lines.append(
+            f"- [{status}] {item.get('kind')}.{item.get('name')} - {item.get('summary', '')}"
+        )
+    return "\n".join(lines)
+
+
+def _program_help_text() -> str:
+    return "\n".join(
+        [
+            "Program/Plugin Commands:",
+            "/runs [state=<all|running|starting|completed|failed|stopped>|<state>] [limit=20]",
+            "/program_start <config_name|draft>",
+            "/program_stop <run_id>",
+            "/plugins [kind=<kind>|<kind>] [enabled=true|false|on|off]",
+            "/plugin_load <plugin_name>",
+            "/plugin_unload <plugin_name>",
+            "/program_help",
+            "/plugin_help",
+            "/run_compare <left_run_id> <right_run_id>",
+            "/run_signals <run_id> [strategy_id=...] [symbol=...] [since_seq=0] [limit=20] [include_debug=true|false]",
+        ]
+    )
+
+
+def _plugin_filter_text(kind: Optional[str], enabled: Optional[bool]) -> str:
+    kind_text = kind if kind else "all"
+    if enabled is None:
+        enabled_text = "all"
+    else:
+        enabled_text = "on" if enabled else "off"
+    return f"Filters: kind={kind_text}, enabled={enabled_text}"
+
+
+def _help_lines() -> list[str]:
+    return [
+        "Commands:",
+        "/configs - list configs",
+        "/run - upload config.json or paste JSON",
+        "/runs [state=<all|running|starting|completed|failed|stopped>|<state>] [limit=20]",
+        "/status <run_id>",
+        "/summary <run_id>",
+        "/program_start <config_name|draft>",
+        "/program_stop <run_id>",
+        "/plugins [kind=<kind>|<kind>] [enabled=true|false|on|off]",
+        "/plugin_load <plugin_name>",
+        "/plugin_unload <plugin_name>",
+        "/program_help",
+        "/plugin_help",
+        "/run_compare <left_run_id> <right_run_id>",
+        "/run_signals <run_id> [strategy_id=...] [symbol=...] [since_seq=0] [limit=20] [include_debug=true|false]",
+        "/stop <run_id>",
+        "/subscribe <run_id>",
+        "/unsubscribe <run_id>",
+        "/draft_new [symbol]",
+        "/draft_show",
+        "/set_feed <plugin> key=value ... | JSON",
+        "/add_strategy <plugin> key=value ... | JSON",
+        "/set_strategy <index> <plugin> key=value ... | JSON",
+        "/del_strategy <index>",
+        "/list_strategy",
+        "/strategy on/off <index|strategy_id|all>",
+        "/save_draft <name.json> [force]",
+        "/run_draft",
+        "/definitions [kind]",
+        "/login <password>",
+        "/logout",
+        "/menu",
+    ]
+
+
 _TELEGRAM_MODULE: Any = None
 
 
@@ -186,6 +482,48 @@ def _extract_server_error_message(payload: Any) -> str | None:
                 out = f"{out} [request_id={request_id}]"
             return out
     return None
+
+
+_SHARED_HTTP_CLIENT: Optional[httpx.AsyncClient] = None
+_SHARED_HTTP_CLIENT_LOCK: Optional[asyncio.Lock] = None
+
+
+def _http_client_lock() -> asyncio.Lock:
+    global _SHARED_HTTP_CLIENT_LOCK
+    if _SHARED_HTTP_CLIENT_LOCK is None:
+        _SHARED_HTTP_CLIENT_LOCK = asyncio.Lock()
+    return _SHARED_HTTP_CLIENT_LOCK
+
+
+async def _get_shared_http_client() -> httpx.AsyncClient:
+    global _SHARED_HTTP_CLIENT
+    if _SHARED_HTTP_CLIENT is not None:
+        return _SHARED_HTTP_CLIENT
+    async with _http_client_lock():
+        if _SHARED_HTTP_CLIENT is None:
+            # Reuse one client across commands for connection pooling.
+            _SHARED_HTTP_CLIENT = httpx.AsyncClient(timeout=30)
+    return _SHARED_HTTP_CLIENT
+
+
+async def _close_shared_http_client() -> None:
+    global _SHARED_HTTP_CLIENT
+    client = _SHARED_HTTP_CLIENT
+    _SHARED_HTTP_CLIENT = None
+    if client is not None:
+        await client.aclose()
+
+
+class _SharedHttpClientContext:
+    async def __aenter__(self) -> httpx.AsyncClient:
+        return await _get_shared_http_client()
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+
+def _shared_http_client_manager() -> _SharedHttpClientContext:
+    return _SharedHttpClientContext()
 
 
 async def _api(
@@ -266,29 +604,40 @@ def _new_draft_config(symbol: str = "AAA") -> dict[str, Any]:
     symbol = symbol.strip() or "AAA"
     return {
         "name": f"tg_draft_{_utc_stamp()}",
+        "plugin_registry": "plugins/plugin.jsonc",
         "data_feed": {
-            "type": "local_csv",
-            "path": f"./data/{symbol}/Bar.csv",
-            "symbol": symbol,
+            "plugin": "local_csv_feed",
+            "params": {
+                "path": f"./data/{symbol}/Bar.csv",
+                "symbol": symbol,
+            },
         },
         "strategies": [
             {
-                "type": "moving_average",
-                "symbol": symbol,
-                "short_window": 5,
-                "long_window": 20,
-                "strategy_id": "mac",
+                "plugin": "moving_average",
+                "params": {
+                    "symbol": symbol,
+                    "short_window": 5,
+                    "long_window": 20,
+                    "strategy_id": "mac",
+                },
+                "enabled": True,
             }
         ],
-        "portfolio": {"type": "naive", "lot_size": 100, "initial_cash": 100000},
+        "portfolio": {
+            "plugin": "naive_portfolio",
+            "params": {"lot_size": 100, "initial_cash": 100000},
+        },
         "execution": {
-            "type": "immediate",
-            "slippage": 0.0,
-            "commission": 0.0,
-            "fill_timing": "next_open",
+            "plugin": "immediate_execution",
+            "params": {
+                "slippage": 0.0,
+                "commission": 0.0,
+                "fill_timing": "next_open",
+            },
         },
         "risk": [],
-        "reporters": [{"type": "equity"}],
+        "reporters": [{"plugin": "equity_reporter"}],
     }
 
 
@@ -321,6 +670,10 @@ def _parse_loose_value(text: str) -> Any:
         return t
 
 
+def _canonical_plugin_name(name: str) -> str:
+    return name.strip()
+
+
 def _parse_component_spec(raw: str, *, require_type: bool) -> dict[str, Any]:
     text = _strip_json_fence(raw).strip()
     if not text:
@@ -335,10 +688,10 @@ def _parse_component_spec(raw: str, *, require_type: bool) -> dict[str, Any]:
         kv_tokens = tokens
         first = tokens[0]
         if require_type and "=" not in first:
-            payload["type"] = first
+            payload["plugin"] = _canonical_plugin_name(first)
             kv_tokens = tokens[1:]
         elif (not require_type) and ("=" not in first):
-            payload["type"] = first
+            payload["plugin"] = _canonical_plugin_name(first)
             kv_tokens = tokens[1:]
         for tok in kv_tokens:
             if "=" not in tok:
@@ -350,11 +703,30 @@ def _parse_component_spec(raw: str, *, require_type: bool) -> dict[str, Any]:
             if not key:
                 raise ValueError("Invalid key=value pair")
             payload[key] = _parse_loose_value(value)
+    plugin_value = payload.get("plugin")
     if require_type:
-        t = payload.get("type")
-        if not isinstance(t, str) or not t.strip():
-            raise ValueError("Component type is required")
-        payload["type"] = t.strip()
+        if not isinstance(plugin_value, str) or not plugin_value.strip():
+            raise ValueError("Component plugin is required")
+    if isinstance(plugin_value, str) and plugin_value.strip():
+        payload["plugin"] = _canonical_plugin_name(plugin_value)
+    else:
+        payload.pop("plugin", None)
+    payload.pop("type", None)
+
+    params_raw = payload.get("params", {})
+    if params_raw is None:
+        params_raw = {}
+    if not isinstance(params_raw, dict):
+        raise ValueError("params must be an object")
+    params = dict(params_raw)
+    for key in list(payload.keys()):
+        if key in {"plugin", "enabled", "params"}:
+            continue
+        params[key] = payload.pop(key)
+    if params:
+        payload["params"] = params
+    else:
+        payload.pop("params", None)
     return payload
 
 
@@ -400,16 +772,15 @@ async def _validate_draft_config(
 
 def _format_draft_summary(config: dict[str, Any]) -> str:
     feed = config.get("data_feed")
-    feed_type = (
-        str(feed.get("type"))
-        if isinstance(feed, dict) and isinstance(feed.get("type"), str)
-        else "-"
-    )
-    feed_symbol = (
-        str(feed.get("symbol"))
-        if isinstance(feed, dict) and feed.get("symbol") is not None
-        else "-"
-    )
+    feed_type = "-"
+    feed_symbol = "-"
+    if isinstance(feed, dict):
+        plugin = feed.get("plugin")
+        params = feed.get("params")
+        if isinstance(plugin, str) and plugin:
+            feed_type = plugin
+        if isinstance(params, dict) and params.get("symbol") is not None:
+            feed_symbol = str(params.get("symbol"))
     strategies = config.get("strategies")
     strategy_count = len(strategies) if isinstance(strategies, list) else 0
     return "\n".join(
@@ -464,39 +835,16 @@ def _match_strategy_indexes(strategies: list[Any], target: str) -> list[int]:
     for i, item in enumerate(strategies):
         if not isinstance(item, dict):
             continue
-        if str(item.get("strategy_id", "")).strip() == t:
+        params = item.get("params", {})
+        if not isinstance(params, dict):
+            params = {}
+        if str(params.get("strategy_id", "")).strip() == t:
             matched.append(i)
     return matched
 
 
 async def cmd_help(update: Any, context: Any) -> None:
-    text = "\n".join(
-        [
-            "Commands:",
-            "/configs - list configs",
-            "/run - upload config.json or paste JSON",
-            "/runs - list runs",
-            "/status <run_id>",
-            "/summary <run_id>",
-            "/stop <run_id>",
-            "/subscribe <run_id>",
-            "/unsubscribe <run_id>",
-            "/draft_new [symbol]",
-            "/draft_show",
-            "/set_feed <type> key=value ... | JSON",
-            "/add_strategy <type> key=value ... | JSON",
-            "/set_strategy <index> <type> key=value ... | JSON",
-            "/del_strategy <index>",
-            "/list_strategy",
-            "/strategy on/off <index|strategy_id|all>",
-            "/save_draft <name.json> [force]",
-            "/run_draft",
-            "/definitions [data_feed|strategy]",
-            "/login <password>",
-            "/logout",
-            "/menu",
-        ]
-    )
+    text = "\n".join(_help_lines())
     await update.message.reply_text(text, reply_markup=_menu_markup(update))  # type: ignore[union-attr]
 
 
@@ -556,6 +904,9 @@ def _inline_menu_markup() -> Any:
         ],
         [
             InlineKeyboardButton("Run", callback_data="menu:run"),
+            InlineKeyboardButton("Plugins", callback_data="menu:plugins"),
+        ],
+        [
             InlineKeyboardButton("Help", callback_data="menu:help"),
         ],
     ]
@@ -567,7 +918,7 @@ def _reply_menu_markup() -> Any:
     ReplyKeyboardMarkup = getattr(telegram, "ReplyKeyboardMarkup")
     keyboard = [
         ["Runs", "Configs"],
-        ["Run", "Help"],
+        ["Run", "Plugins", "Help"],
         ["Logout"],
     ]
     return ReplyKeyboardMarkup(
@@ -619,46 +970,24 @@ async def on_button(update: Any, context: Any) -> None:
 
     if data == "menu:help":
         # Reuse help content.
-        text = "\n".join(
-            [
-                "Commands:",
-                "/configs - list configs",
-                "/run - upload config.json or paste JSON",
-                "/runs - list runs",
-                "/status <run_id>",
-                "/summary <run_id>",
-                "/stop <run_id>",
-                "/subscribe <run_id>",
-                "/unsubscribe <run_id>",
-                "/draft_new [symbol]",
-                "/draft_show",
-                "/set_feed <type> key=value ... | JSON",
-                "/add_strategy <type> key=value ... | JSON",
-                "/set_strategy <index> <type> key=value ... | JSON",
-                "/del_strategy <index>",
-                "/list_strategy",
-                "/strategy on/off <index|strategy_id|all>",
-                "/save_draft <name.json> [force]",
-                "/run_draft",
-                "/definitions [data_feed|strategy]",
-                "/login <password>",
-                "/logout",
-            ]
-        )
+        text = "\n".join(_help_lines())
         await query.edit_message_text(text=text, reply_markup=_inline_menu_markup())
         return
 
-    if data in {"menu:runs", "menu:configs"} and not _require_auth_for_callback(
+    if data in {"menu:runs", "menu:configs", "menu:plugins"} and not _require_auth_for_callback(
         state, update
     ):
         await query.answer("Please /login in private chat first", show_alert=True)
         return
 
     if data == "menu:runs":
-        await _button_show_runs(query, context, state)
+        await _button_show_runs(query, context, state, state_filter=None, limit=20)
         return
     if data == "menu:configs":
         await _button_show_configs(query, context, state)
+        return
+    if data == "menu:plugins":
+        await _button_show_plugins(query, context, state, kind=None, enabled=None)
         return
     if data == "menu:run":
         if not _require_auth_for_callback(state, update):
@@ -682,20 +1011,56 @@ async def on_button(update: Any, context: Any) -> None:
         await _button_config_action(query, context, state, data)
         return
 
+    if isinstance(data, str) and data.startswith("plugin:"):
+        if not _require_auth_for_callback(state, update):
+            await query.answer("Please /login in private chat first", show_alert=True)
+            return
+        await _button_plugin_action(query, context, state, data)
+        return
 
-async def _button_show_runs(query: Any, context: Any, state: BotState) -> None:
-    async with httpx.AsyncClient() as client:
+    if isinstance(data, str) and data.startswith("runs:"):
+        if not _require_auth_for_callback(state, update):
+            await query.answer("Please /login in private chat first", show_alert=True)
+            return
+        await _button_runs_filter_action(query, context, state, data)
+        return
+
+    if isinstance(data, str) and data.startswith("plugins:"):
+        if not _require_auth_for_callback(state, update):
+            await query.answer("Please /login in private chat first", show_alert=True)
+            return
+        await _button_plugins_filter_action(query, context, state, data)
+        return
+
+
+async def _button_show_runs(
+    query: Any,
+    context: Any,
+    state: BotState,
+    *,
+    state_filter: Optional[str],
+    limit: int,
+) -> None:
+    async with _shared_http_client_manager() as client:
         data = await _api(client, state, "GET", "/runs")
     runs = data.get("runs", [])
-    if not isinstance(runs, list) or not runs:
+    if not isinstance(runs, list):
+        runs = []
+    ctx_runs = _filter_runs_for_display(
+        [r for r in runs if isinstance(r, dict)],
+        state=state_filter,
+        limit=limit,
+    )
+    context.user_data["runs_filter"] = {"state": state_filter, "limit": limit}
+    if not ctx_runs:
         await query.edit_message_text(
-            text="No runs", reply_markup=_inline_menu_markup()
+            text=f"No runs\n{_run_filters_text(state=state_filter, limit=limit)}",
+            reply_markup=_inline_menu_markup(),
         )
         return
 
     # Cache runs in user_data to keep callback_data small.
-    ctx_runs: list[dict[str, Any]] = [r for r in runs if isinstance(r, dict)]
-    context.user_data["runs_cache"] = ctx_runs[:20]
+    context.user_data["runs_cache"] = ctx_runs
 
     telegram = _telegram()
     InlineKeyboardButton = getattr(telegram, "InlineKeyboardButton")
@@ -709,16 +1074,64 @@ async def _button_show_runs(query: Any, context: Any, state: BotState) -> None:
         keyboard.append(
             [InlineKeyboardButton(f"{label} ({st})", callback_data=f"run:menu:{i}")]
         )
+    keyboard.append(
+        [
+            InlineKeyboardButton("All", callback_data="runs:all"),
+            InlineKeyboardButton("Running", callback_data="runs:state:running"),
+            InlineKeyboardButton("Failed", callback_data="runs:state:failed"),
+        ]
+    )
+    keyboard.append(
+        [
+            InlineKeyboardButton("Completed", callback_data="runs:state:completed"),
+            InlineKeyboardButton("Stopped", callback_data="runs:state:stopped"),
+            InlineKeyboardButton("Refresh", callback_data="runs:refresh"),
+        ]
+    )
     keyboard.append([InlineKeyboardButton("Back", callback_data="menu:help")])
 
     await query.edit_message_text(
-        text="Select a run:",
+        text=f"Select a run:\n{_run_filters_text(state=state_filter, limit=limit)}",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 
+async def _button_runs_filter_action(
+    query: Any, context: Any, state: BotState, data: str
+) -> None:
+    current = context.user_data.get("runs_filter", {})
+    current_state = current.get("state") if isinstance(current, dict) else None
+    if not isinstance(current_state, str):
+        current_state = None
+    current_limit = current.get("limit") if isinstance(current, dict) else 20
+    if not isinstance(current_limit, int):
+        current_limit = 20
+    current_limit = max(1, min(current_limit, 50))
+
+    if data == "runs:all":
+        await _button_show_runs(
+            query, context, state, state_filter=None, limit=current_limit
+        )
+        return
+    if data == "runs:refresh":
+        await _button_show_runs(
+            query, context, state, state_filter=current_state, limit=current_limit
+        )
+        return
+    if data.startswith("runs:state:"):
+        token = data.split(":", 2)[2].strip()
+        try:
+            next_state = _normalize_run_state(token)
+        except Exception:
+            next_state = None
+        await _button_show_runs(
+            query, context, state, state_filter=next_state, limit=current_limit
+        )
+        return
+
+
 async def _button_show_configs(query: Any, context: Any, state: BotState) -> None:
-    async with httpx.AsyncClient() as client:
+    async with _shared_http_client_manager() as client:
         data = await _api(client, state, "GET", "/configs")
     items = data.get("configs", [])
     if not isinstance(items, list) or not items:
@@ -746,6 +1159,183 @@ async def _button_show_configs(query: Any, context: Any, state: BotState) -> Non
         text="Select a config:",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
+
+
+async def _button_show_plugins(
+    query: Any,
+    context: Any,
+    state: BotState,
+    *,
+    kind: Optional[str],
+    enabled: Optional[bool],
+) -> None:
+    path = "/plugins"
+    query_params: dict[str, Any] = {}
+    if kind:
+        query_params["kind"] = kind
+    if enabled is not None:
+        query_params["enabled"] = enabled
+    if query_params:
+        path = path + "?" + urlencode(query_params)
+    async with _shared_http_client_manager() as client:
+        data = await _api(client, state, "GET", path)
+    items = data.get("plugins", [])
+    context.user_data["plugins_filter"] = {"kind": kind, "enabled": enabled}
+    if not isinstance(items, list) or not items:
+        await query.edit_message_text(
+            text=f"No plugins\n{_plugin_filter_text(kind, enabled)}",
+            reply_markup=_inline_menu_markup(),
+        )
+        return
+
+    plugins: list[dict[str, Any]] = [it for it in items if isinstance(it, dict)][:20]
+    context.user_data["plugins_cache"] = plugins
+
+    telegram = _telegram()
+    InlineKeyboardButton = getattr(telegram, "InlineKeyboardButton")
+    InlineKeyboardMarkup = getattr(telegram, "InlineKeyboardMarkup")
+
+    keyboard = []
+    for i, one in enumerate(plugins):
+        name = str(one.get("name", ""))
+        item_kind = str(one.get("kind", ""))
+        status = "ON" if bool(one.get("enabled", True)) else "OFF"
+        label = f"[{status}] {item_kind}.{name}"
+        if len(label) > 48:
+            label = label[:48] + "..."
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"plugin:menu:{i}")])
+    keyboard.append(
+        [
+            InlineKeyboardButton("All", callback_data="plugins:all"),
+            InlineKeyboardButton("DataFeed", callback_data="plugins:kind:data_feed"),
+            InlineKeyboardButton("Strategy", callback_data="plugins:kind:strategy"),
+        ]
+    )
+    keyboard.append(
+        [
+            InlineKeyboardButton("ON", callback_data="plugins:enabled:on"),
+            InlineKeyboardButton("OFF", callback_data="plugins:enabled:off"),
+            InlineKeyboardButton("Refresh", callback_data="plugins:refresh"),
+        ]
+    )
+    keyboard.append([InlineKeyboardButton("Back", callback_data="menu:help")])
+
+    await query.edit_message_text(
+        text=f"Select a plugin:\n{_plugin_filter_text(kind, enabled)}",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def _button_plugins_filter_action(
+    query: Any, context: Any, state: BotState, data: str
+) -> None:
+    current = context.user_data.get("plugins_filter", {})
+    current_kind = current.get("kind") if isinstance(current, dict) else None
+    current_enabled = current.get("enabled") if isinstance(current, dict) else None
+    if current_enabled not in {None, True, False}:
+        current_enabled = None
+    if not isinstance(current_kind, str):
+        current_kind = None
+
+    if data == "plugins:all":
+        await _button_show_plugins(
+            query, context, state, kind=None, enabled=None
+        )
+        return
+    if data == "plugins:refresh":
+        await _button_show_plugins(
+            query, context, state, kind=current_kind, enabled=current_enabled
+        )
+        return
+    if data.startswith("plugins:kind:"):
+        kind = data.split(":", 2)[2].strip()
+        await _button_show_plugins(
+            query, context, state, kind=kind or None, enabled=current_enabled
+        )
+        return
+    if data.startswith("plugins:enabled:"):
+        token = data.split(":", 2)[2].strip().lower()
+        enabled = True if token == "on" else False if token == "off" else None
+        await _button_show_plugins(
+            query, context, state, kind=current_kind, enabled=enabled
+        )
+        return
+
+
+async def _button_plugin_action(
+    query: Any, context: Any, state: BotState, data: str
+) -> None:
+    # Supported actions:
+    # - plugin:menu:<idx>
+    # - plugin:toggle:<idx>
+    parts = data.split(":", 2)
+    if len(parts) != 3:
+        return
+    _, action, idx_s = parts
+    try:
+        idx = int(idx_s)
+    except Exception:
+        return
+    plugins: list[dict[str, Any]] = context.user_data.get("plugins_cache", [])
+    if not isinstance(plugins, list) or idx < 0 or idx >= len(plugins):
+        await query.edit_message_text(
+            text="Plugin list expired. Tap Plugins again.",
+            reply_markup=_inline_menu_markup(),
+        )
+        return
+    plugin = plugins[idx]
+    name = str(plugin.get("name", ""))
+    kind = str(plugin.get("kind", ""))
+    enabled = bool(plugin.get("enabled", True))
+    summary = str(plugin.get("summary", ""))
+
+    telegram = _telegram()
+    InlineKeyboardButton = getattr(telegram, "InlineKeyboardButton")
+    InlineKeyboardMarkup = getattr(telegram, "InlineKeyboardMarkup")
+
+    if action == "menu":
+        toggle_label = "Unload" if enabled else "Load"
+        keyboard = [
+            [InlineKeyboardButton(toggle_label, callback_data=f"plugin:toggle:{idx}")],
+            [InlineKeyboardButton("Back", callback_data="plugins:refresh")],
+        ]
+        await query.edit_message_text(
+            text=(
+                f"Plugin: {name}\n"
+                f"Kind: {kind}\n"
+                f"Enabled: {enabled}\n"
+                f"Summary: {summary}"
+            ),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
+
+    if action == "toggle":
+        path = (
+            f"/plugins/{quote(name)}/unload"
+            if enabled
+            else f"/plugins/{quote(name)}/load"
+        )
+        async with _shared_http_client_manager() as client:
+            payload = await _api(client, state, "POST", path)
+        new_plugin = payload.get("plugin", {})
+        plugin["enabled"] = bool(new_plugin.get("enabled", enabled))
+        new_enabled = bool(plugin.get("enabled", enabled))
+        toggle_label = "Unload" if new_enabled else "Load"
+        keyboard = [
+            [InlineKeyboardButton(toggle_label, callback_data=f"plugin:toggle:{idx}")],
+            [InlineKeyboardButton("Back", callback_data="plugins:refresh")],
+        ]
+        await query.edit_message_text(
+            text=(
+                f"Plugin: {name}\n"
+                f"Kind: {kind}\n"
+                f"Enabled: {new_enabled}\n"
+                f"Summary: {summary}"
+            ),
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        return
 
 
 async def _button_config_action(
@@ -789,7 +1379,7 @@ async def _button_config_action(
         return
 
     if action == "run":
-        async with httpx.AsyncClient() as client:
+        async with _shared_http_client_manager() as client:
             run = await _api(client, state, "POST", "/runs", {"config_name": name})
         run_id = run.get("run_id")
         await query.edit_message_text(
@@ -905,7 +1495,7 @@ async def _button_run_action(
                 InlineKeyboardButton("Subscribe", callback_data=f"run:sub:{idx}"),
                 InlineKeyboardButton("Unsubscribe", callback_data=f"run:unsub:{idx}"),
             ],
-            [InlineKeyboardButton("Back", callback_data="menu:runs")],
+            [InlineKeyboardButton("Back", callback_data="runs:refresh")],
         ]
         await query.edit_message_text(
             text=f"Run: {run_id}",
@@ -915,7 +1505,7 @@ async def _button_run_action(
 
     if action in {"status", "summary"}:
         path = f"/runs/{run_id}" if action == "status" else f"/runs/{run_id}/summary"
-        async with httpx.AsyncClient() as client:
+        async with _shared_http_client_manager() as client:
             payload = await _api(client, state, "GET", path)
         await query.edit_message_text(
             text=(
@@ -928,7 +1518,7 @@ async def _button_run_action(
         return
 
     if action == "stop":
-        async with httpx.AsyncClient() as client:
+        async with _shared_http_client_manager() as client:
             await _api(client, state, "POST", f"/runs/{run_id}/stop")
         await query.edit_message_text(
             text=f"Stop requested: {run_id}",
@@ -941,89 +1531,13 @@ async def _button_run_action(
     if not isinstance(chat_id, int):
         return
     if action == "sub":
-        # Reuse the existing streaming implementation.
         key = (chat_id, run_id)
         if key in state.subscriptions:
             await query.answer("Already subscribed", show_alert=False)
             return
-
-        # Create a minimal fake update-like object is not worth it; call the underlying logic.
-        # We keep subscription code in cmd_subscribe; here we emulate the key insert.
-        async def stream_loop() -> None:
-            ws_url = state.api_base.rstrip("/")
-            if ws_url.startswith("https://"):
-                ws_url = "wss://" + ws_url[len("https://") :]
-            elif ws_url.startswith("http://"):
-                ws_url = "ws://" + ws_url[len("http://") :]
-            ws_url = (
-                f"{ws_url}/runs/{run_id}/stream"
-                "?types=FillEvent,MetricsEvent,NotificationIntentEvent"
-            )
-            outbox = NotificationOutbox(_subscription_outbox_path(run_id, chat_id))
-
-            async def send_from_outbox(msg: Any) -> None:
-                payload = msg.payload
-                await context.bot.send_message(
-                    chat_id=int(payload["chat_id"]),
-                    text=str(payload["text"]),
-                )
-
-            delivery_worker = OutboxNotifierWorker(
-                outbox=outbox,
-                sender=send_from_outbox,
-                retry_delay_seconds=2,
-                max_attempts=5,
-            )
-
-            try:
-                import importlib
-
-                websockets = importlib.import_module("websockets")
-            except Exception:
-                websockets = None
-
-            if websockets is None:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="websockets not installed; falling back to polling",
-                )
-                await _poll_events_loop(context, state, chat_id, run_id)
-                return
-
-            backoff = 0.5
-            while True:
-                try:
-                    async with websockets.connect(
-                        ws_url,
-                        **_ws_headers_kwargs(websockets, state.api_key),
-                        ping_interval=20,
-                        ping_timeout=20,
-                    ) as ws:
-                        backoff = 0.5
-                        async for raw in ws:
-                            if isinstance(raw, (bytes, bytearray)):
-                                raw = raw.decode("utf-8")
-                            msg = json.loads(raw)
-                            if msg.get("kind") == "events":
-                                for ev in msg.get("events", []):
-                                    if isinstance(ev, dict):
-                                        _queue_event_for_delivery(
-                                            outbox=outbox,
-                                            run_id=run_id,
-                                            chat_id=chat_id,
-                                            ev=ev,
-                                        )
-                            await delivery_worker.process_once_async(
-                                limit=200,
-                                now=datetime.utcnow(),
-                            )
-                except asyncio.CancelledError:
-                    return
-                except Exception:
-                    await asyncio.sleep(backoff)
-                    backoff = min(backoff * 2, 10.0)
-
-        task = asyncio.create_task(stream_loop())
+        task = asyncio.create_task(
+            _subscription_stream_loop(context, state, chat_id, run_id)
+        )
         state.subscriptions[key] = task
         await query.edit_message_text(
             text=f"Subscribed: {run_id}",
@@ -1052,7 +1566,7 @@ async def cmd_configs(update: Any, context: Any) -> None:
             "Please /login <password> in a private chat first"
         )  # type: ignore[union-attr]
         return
-    async with httpx.AsyncClient() as client:
+    async with _shared_http_client_manager() as client:
         data = await _api(client, state, "GET", "/configs")
     items = data.get("configs", [])
     if not items:
@@ -1086,14 +1600,40 @@ async def cmd_runs(update: Any, context: Any) -> None:
             "Please /login <password> in a private chat first"
         )  # type: ignore[union-attr]
         return
-    async with httpx.AsyncClient() as client:
+    try:
+        filters = _parse_runs_tokens([str(x) for x in context.args])
+    except Exception as exc:
+        await update.message.reply_text(
+            "Invalid filters: "
+            + str(exc)
+            + "\nUsage: /runs [state=<all|running|starting|completed|failed|stopped>|<state>] [limit=20]"
+        )  # type: ignore[union-attr]
+        return
+    state_filter = filters.get("state")
+    if not isinstance(state_filter, str):
+        state_filter = None
+    limit = filters.get("limit", 20)
+    if not isinstance(limit, int):
+        limit = 20
+    limit = max(1, min(limit, 50))
+
+    async with _shared_http_client_manager() as client:
         data = await _api(client, state, "GET", "/runs")
     runs = data.get("runs", [])
-    if not runs:
-        await update.message.reply_text("No runs")  # type: ignore[union-attr]
+    if not isinstance(runs, list):
+        runs = []
+    ctx_runs = _filter_runs_for_display(
+        [r for r in runs if isinstance(r, dict)],
+        state=state_filter,
+        limit=limit,
+    )
+    context.user_data["runs_filter"] = {"state": state_filter, "limit": limit}
+    if not ctx_runs:
+        await update.message.reply_text(
+            f"No runs\n{_run_filters_text(state=state_filter, limit=limit)}"
+        )  # type: ignore[union-attr]
         return
 
-    ctx_runs: list[dict[str, Any]] = [r for r in runs if isinstance(r, dict)][:20]
     context.user_data["runs_cache"] = ctx_runs
 
     telegram = _telegram()
@@ -1108,10 +1648,24 @@ async def cmd_runs(update: Any, context: Any) -> None:
         keyboard.append(
             [InlineKeyboardButton(f"{label} ({st})", callback_data=f"run:menu:{i}")]
         )
+    keyboard.append(
+        [
+            InlineKeyboardButton("All", callback_data="runs:all"),
+            InlineKeyboardButton("Running", callback_data="runs:state:running"),
+            InlineKeyboardButton("Failed", callback_data="runs:state:failed"),
+        ]
+    )
+    keyboard.append(
+        [
+            InlineKeyboardButton("Completed", callback_data="runs:state:completed"),
+            InlineKeyboardButton("Stopped", callback_data="runs:state:stopped"),
+            InlineKeyboardButton("Refresh", callback_data="runs:refresh"),
+        ]
+    )
     keyboard.append([InlineKeyboardButton("Menu", callback_data="menu:help")])
 
     await update.message.reply_text(
-        "Select a run:",
+        f"Select a run:\n{_run_filters_text(state=state_filter, limit=limit)}",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )  # type: ignore[union-attr]
 
@@ -1127,7 +1681,7 @@ async def cmd_status(update: Any, context: Any) -> None:
         await update.message.reply_text("Usage: /status <run_id>")  # type: ignore[union-attr]
         return
     run_id = context.args[0]
-    async with httpx.AsyncClient() as client:
+    async with _shared_http_client_manager() as client:
         data = await _api(client, state, "GET", f"/runs/{run_id}")
     await update.message.reply_text(
         _format_run_status(data),
@@ -1146,12 +1700,222 @@ async def cmd_summary(update: Any, context: Any) -> None:
         await update.message.reply_text("Usage: /summary <run_id>")  # type: ignore[union-attr]
         return
     run_id = context.args[0]
-    async with httpx.AsyncClient() as client:
+    async with _shared_http_client_manager() as client:
         data = await _api(client, state, "GET", f"/runs/{run_id}/summary")
     await update.message.reply_text(
         _format_summary_response(data),
         reply_markup=_menu_markup(update),
     )  # type: ignore[union-attr]
+
+
+async def cmd_run_compare(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    if len(context.args) < 2:
+        await msg.reply_text("Usage: /run_compare <left_run_id> <right_run_id>")
+        return
+    left_run_id = str(context.args[0]).strip()
+    right_run_id = str(context.args[1]).strip()
+    async with _shared_http_client_manager() as client:
+        data = await _api(
+            client,
+            state,
+            "GET",
+            f"/runs/{left_run_id}/compare/{right_run_id}",
+        )
+    await msg.reply_text(
+        _format_compare_response(data),
+        reply_markup=_menu_markup(update),
+    )
+
+
+async def cmd_run_signals(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    if not context.args:
+        await msg.reply_text(
+            "Usage: /run_signals <run_id> [strategy_id=...] [symbol=...] "
+            "[since_seq=0] [limit=20] [include_debug=true|false]"
+        )
+        return
+    run_id = str(context.args[0]).strip()
+    try:
+        filters = _parse_filter_tokens([str(x) for x in context.args[1:]])
+    except Exception as exc:
+        await msg.reply_text(
+            "Invalid filters: "
+            + str(exc)
+            + "\nUsage: /run_signals <run_id> [strategy_id=...] [symbol=...] "
+            "[since_seq=0] [limit=20] [include_debug=true|false]"
+        )
+        return
+
+    query_params: dict[str, Any] = {}
+    for key in ("strategy_id", "symbol", "since_seq", "limit", "include_debug"):
+        if key in filters:
+            query_params[key] = filters[key]
+    path = f"/runs/{run_id}/signals"
+    if query_params:
+        path = path + "?" + urlencode(query_params)
+    async with _shared_http_client_manager() as client:
+        data = await _api(client, state, "GET", path)
+    await msg.reply_text(
+        _format_signal_items(data),
+        reply_markup=_menu_markup(update),
+    )
+
+
+async def cmd_program_start(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    if not context.args:
+        await msg.reply_text("Usage: /program_start <config_name|draft>")
+        return
+    target = str(context.args[0]).strip()
+    if target.lower() == "draft":
+        await cmd_run_draft(update, context)
+        return
+
+    try:
+        config_name = _normalize_config_name(target)
+    except Exception as exc:
+        await msg.reply_text(str(exc))
+        return
+
+    async with _shared_http_client_manager() as client:
+        run = await _api(client, state, "POST", "/runs", {"config_name": config_name})
+    run_id = run.get("run_id")
+    await msg.reply_text(
+        "\n".join(
+            [
+                f"Program started: {run_id}",
+                f"Config: {config_name}",
+                f"/status {run_id}",
+                f"/summary {run_id}",
+                f"/program_stop {run_id}",
+                f"/subscribe {run_id}",
+            ]
+        ),
+        reply_markup=_menu_markup(update),
+    )
+
+
+async def cmd_program_stop(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    if not context.args:
+        await msg.reply_text("Usage: /program_stop <run_id>")
+        return
+    run_id = str(context.args[0]).strip()
+    async with _shared_http_client_manager() as client:
+        await _api(client, state, "POST", f"/runs/{run_id}/stop")
+    await msg.reply_text(
+        f"Program stop requested: {run_id}",
+        reply_markup=_menu_markup(update),
+    )
+
+
+async def cmd_plugins(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    try:
+        filters = _parse_plugins_tokens([str(x) for x in context.args])
+    except Exception as exc:
+        await msg.reply_text(
+            f"Invalid filters: {exc}\nUsage: /plugins [kind=<kind>|<kind>] [enabled=true|false|on|off]"
+        )
+        return
+    path = "/plugins"
+    if filters:
+        path = path + "?" + urlencode(filters)
+    async with _shared_http_client_manager() as client:
+        data = await _api(client, state, "GET", path)
+    await msg.reply_text(
+        _format_plugins(data),
+        reply_markup=_menu_markup(update),
+    )
+
+
+async def cmd_plugin_load(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    if not context.args:
+        await msg.reply_text("Usage: /plugin_load <plugin_name>")
+        return
+    name = str(context.args[0]).strip()
+    async with _shared_http_client_manager() as client:
+        payload = await _api(client, state, "POST", f"/plugins/{quote(name)}/load")
+    plugin = payload.get("plugin", {})
+    await msg.reply_text(
+        f"Plugin loaded: {plugin.get('name')} ({plugin.get('kind')}) enabled={plugin.get('enabled')}",
+        reply_markup=_menu_markup(update),
+    )
+
+
+async def cmd_plugin_unload(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    if not context.args:
+        await msg.reply_text("Usage: /plugin_unload <plugin_name>")
+        return
+    name = str(context.args[0]).strip()
+    async with _shared_http_client_manager() as client:
+        payload = await _api(client, state, "POST", f"/plugins/{quote(name)}/unload")
+    plugin = payload.get("plugin", {})
+    await msg.reply_text(
+        f"Plugin unloaded: {plugin.get('name')} ({plugin.get('kind')}) enabled={plugin.get('enabled')}",
+        reply_markup=_menu_markup(update),
+    )
+
+
+async def cmd_plugin_help(update: Any, context: Any) -> None:
+    state: BotState = context.bot_data["state"]
+    msg = update.message
+    if msg is None:
+        return
+    if not _check_auth(state, update):
+        await msg.reply_text("Please /login <password> in a private chat first")
+        return
+    await msg.reply_text(_program_help_text(), reply_markup=_menu_markup(update))
+
+
+async def cmd_program_help(update: Any, context: Any) -> None:
+    await cmd_plugin_help(update, context)
 
 
 async def cmd_stop(update: Any, context: Any) -> None:
@@ -1165,7 +1929,7 @@ async def cmd_stop(update: Any, context: Any) -> None:
         await update.message.reply_text("Usage: /stop <run_id>")  # type: ignore[union-attr]
         return
     run_id = context.args[0]
-    async with httpx.AsyncClient() as client:
+    async with _shared_http_client_manager() as client:
         await _api(client, state, "POST", f"/runs/{run_id}/stop")
     await update.message.reply_text(
         f"Stop requested: {run_id}",
@@ -1215,12 +1979,14 @@ async def cmd_definitions(update: Any, context: Any) -> None:
         await msg.reply_text("Please /login <password> in a private chat first")
         return
     category = context.args[0].strip().lower() if context.args else ""
-    allowed = {"data_feed", "strategy"}
+    allowed = {"data_feed", "strategy", "portfolio", "execution", "risk", "reporter"}
     if category and category not in allowed:
-        await msg.reply_text("Usage: /definitions [data_feed|strategy]")
+        await msg.reply_text(
+            "Usage: /definitions [data_feed|strategy|portfolio|execution|risk|reporter]"
+        )
         return
 
-    async with httpx.AsyncClient() as client:
+    async with _shared_http_client_manager() as client:
         data = await _api(client, state, "GET", "/definitions")
     defs = data.get("definitions", [])
     if not isinstance(defs, list):
@@ -1297,9 +2063,12 @@ async def cmd_list_strategy(update: Any, context: Any) -> None:
         if not isinstance(one, dict):
             continue
         state_text = "ON" if _strategy_enabled(one) else "OFF"
-        strategy_id = str(one.get("strategy_id", "-"))
-        stype = str(one.get("type", "-"))
-        symbol = str(one.get("symbol", "-"))
+        params = one.get("params", {})
+        if not isinstance(params, dict):
+            params = {}
+        strategy_id = str(params.get("strategy_id", "-"))
+        stype = str(one.get("plugin", "-"))
+        symbol = str(params.get("symbol", "-"))
         lines.append(
             f"{i}. [{state_text}] id={strategy_id} type={stype} symbol={symbol}"
         )
@@ -1344,7 +2113,7 @@ async def cmd_strategy_switch(update: Any, context: Any) -> None:
             continue
         strategies[idx]["enabled"] = enabled
 
-    async with httpx.AsyncClient() as client:
+    async with _shared_http_client_manager() as client:
         err = await _validate_draft_config(client, state, draft)
     if err:
         draft["strategies"] = snapshot
@@ -1369,7 +2138,7 @@ async def cmd_set_feed(update: Any, context: Any) -> None:
         return
     spec_text = _command_tail(msg.text)
     if not spec_text:
-        await msg.reply_text("Usage: /set_feed <type> key=value ... | JSON")
+        await msg.reply_text("Usage: /set_feed <plugin> key=value ... | JSON")
         return
     try:
         feed = _parse_component_spec(spec_text, require_type=True)
@@ -1380,7 +2149,7 @@ async def cmd_set_feed(update: Any, context: Any) -> None:
     draft = _get_or_create_draft(state, user_id)
     old_feed = copy.deepcopy(draft.get("data_feed"))
     draft["data_feed"] = feed
-    async with httpx.AsyncClient() as client:
+    async with _shared_http_client_manager() as client:
         err = await _validate_draft_config(client, state, draft)
     if err:
         draft["data_feed"] = old_feed
@@ -1404,7 +2173,7 @@ async def cmd_add_strategy(update: Any, context: Any) -> None:
         return
     spec_text = _command_tail(msg.text)
     if not spec_text:
-        await msg.reply_text("Usage: /add_strategy <type> key=value ... | JSON")
+        await msg.reply_text("Usage: /add_strategy <plugin> key=value ... | JSON")
         return
     try:
         strategy = _parse_component_spec(spec_text, require_type=True)
@@ -1419,7 +2188,7 @@ async def cmd_add_strategy(update: Any, context: Any) -> None:
         strategies = []
         draft["strategies"] = strategies
     strategies.append(strategy)
-    async with httpx.AsyncClient() as client:
+    async with _shared_http_client_manager() as client:
         err = await _validate_draft_config(client, state, draft)
     if err:
         strategies.pop()
@@ -1442,7 +2211,7 @@ async def cmd_set_strategy(update: Any, context: Any) -> None:
     tail = _command_tail(msg.text)
     parts = tail.split(" ", 1)
     if len(parts) < 2:
-        await msg.reply_text("Usage: /set_strategy <index> <type> key=value ... | JSON")
+        await msg.reply_text("Usage: /set_strategy <index> <plugin> key=value ... | JSON")
         return
     try:
         idx = int(parts[0])
@@ -1465,7 +2234,7 @@ async def cmd_set_strategy(update: Any, context: Any) -> None:
     if "enabled" not in strategy:
         strategy["enabled"] = _strategy_enabled(old) if isinstance(old, dict) else True
     strategies[idx] = strategy
-    async with httpx.AsyncClient() as client:
+    async with _shared_http_client_manager() as client:
         err = await _validate_draft_config(client, state, draft)
     if err:
         strategies[idx] = old
@@ -1500,7 +2269,7 @@ async def cmd_del_strategy(update: Any, context: Any) -> None:
         await msg.reply_text("Strategy index out of range")
         return
     old = strategies.pop(idx)
-    async with httpx.AsyncClient() as client:
+    async with _shared_http_client_manager() as client:
         err = await _validate_draft_config(client, state, draft)
     if err:
         strategies.insert(idx, old)
@@ -1536,7 +2305,7 @@ async def cmd_save_draft(update: Any, context: Any) -> None:
     draft = _get_or_create_draft(state, user_id)
     payload = copy.deepcopy(draft)
     payload["name"] = name[:-5]
-    async with httpx.AsyncClient() as client:
+    async with _shared_http_client_manager() as client:
         err = await _validate_draft_config(client, state, payload)
         if err:
             await msg.reply_text(f"Draft is invalid: {err}")
@@ -1561,7 +2330,7 @@ async def cmd_run_draft(update: Any, context: Any) -> None:
     user_id = int(update.effective_user.id)  # type: ignore[union-attr]
     draft = _get_or_create_draft(state, user_id)
     payload = copy.deepcopy(draft)
-    async with httpx.AsyncClient() as client:
+    async with _shared_http_client_manager() as client:
         err = await _validate_draft_config(client, state, payload)
         if err:
             await msg.reply_text(f"Draft is invalid: {err}")
@@ -1599,7 +2368,7 @@ async def _run_from_json_text(
 
     config_name = f"tg_{update.effective_chat.id}_{_utc_stamp()}.json"  # type: ignore[union-attr]
 
-    async with httpx.AsyncClient() as client:
+    async with _shared_http_client_manager() as client:
         valid = await _api(client, state, "POST", "/configs/validate", {"config": cfg})
         if not valid.get("ok"):
             err = valid.get("error", {}).get("message", "validation failed")
@@ -1667,7 +2436,7 @@ async def on_document(update: Any, context: Any) -> None:
 
     config_name = f"tg_{update.effective_chat.id}_{_utc_stamp()}.json"  # type: ignore[union-attr]
 
-    async with httpx.AsyncClient() as client:
+    async with _shared_http_client_manager() as client:
         valid = await _api(client, state, "POST", "/configs/validate", {"config": cfg})
         if not valid.get("ok"):
             err = valid.get("error", {}).get("message", "validation failed")
@@ -1704,7 +2473,7 @@ async def on_text(update: Any, context: Any) -> None:
     if (
         _is_private_chat(update)
         and (not _check_auth(state, update))
-        and text in {"Runs", "Configs", "Run", "Logout"}
+        and text in {"Runs", "Configs", "Run", "Plugins", "Logout"}
     ):
         await msg.reply_text(
             "Please /login <password> first",
@@ -1733,6 +2502,9 @@ async def on_text(update: Any, context: Any) -> None:
             return
         if text == "Run":
             await cmd_run(update, context)
+            return
+        if text == "Plugins":
+            await cmd_plugins(update, context)
             return
         if text == "Logout":
             await cmd_logout(update, context)
@@ -1764,6 +2536,21 @@ def _format_event(ev: dict[str, Any]) -> Optional[str]:
             message = data.get("message")
             if isinstance(message, str) and message:
                 return message
+    if et == "DataSourceStatusEvent":
+        if not isinstance(data, dict):
+            return None
+        status = str(data.get("status", "")).strip().lower()
+        # Alert on source errors; skip noisy recovery/ok messages by default.
+        if status != "error":
+            return None
+        source = data.get("source_type", data.get("source_index"))
+        failures = data.get("failures")
+        cooldown = data.get("cooldown_seconds")
+        message = str(data.get("message", "")).strip()
+        return (
+            f"DATA SOURCE ALERT source={source} status=error "
+            f"failures={failures} cooldown={cooldown}s msg={message}"
+        )
     return None
 
 
@@ -1804,6 +2591,88 @@ def _queue_event_for_delivery(
     return True
 
 
+def _run_stream_url(api_base: str, run_id: str) -> str:
+    ws_url = api_base.rstrip("/")
+    if ws_url.startswith("https://"):
+        ws_url = "wss://" + ws_url[len("https://") :]
+    elif ws_url.startswith("http://"):
+        ws_url = "ws://" + ws_url[len("http://") :]
+    return (
+        f"{ws_url}/runs/{run_id}/stream"
+        "?types=FillEvent,MetricsEvent,NotificationIntentEvent,DataSourceStatusEvent"
+    )
+
+
+async def _subscription_stream_loop(
+    context: Any, state: BotState, chat_id: int, run_id: str
+) -> None:
+    ws_url = _run_stream_url(state.api_base, run_id)
+    outbox = NotificationOutbox(_subscription_outbox_path(run_id, chat_id))
+
+    async def send_from_outbox(msg: Any) -> None:
+        payload = msg.payload
+        await context.bot.send_message(
+            chat_id=int(payload["chat_id"]),
+            text=str(payload["text"]),
+        )
+
+    delivery_worker = OutboxNotifierWorker(
+        outbox=outbox,
+        sender=send_from_outbox,
+        retry_delay_seconds=2,
+        max_attempts=5,
+    )
+
+    try:
+        import importlib
+
+        websockets = importlib.import_module("websockets")
+    except Exception:
+        websockets = None
+
+    if websockets is None:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="websockets not installed; falling back to polling",
+        )
+        await _poll_events_loop(context, state, chat_id, run_id)
+        return
+
+    backoff = 0.5
+    while True:
+        try:
+            async with websockets.connect(
+                ws_url,
+                **_ws_headers_kwargs(websockets, state.api_key),
+                ping_interval=20,
+                ping_timeout=20,
+            ) as ws:
+                backoff = 0.5
+                async for raw in ws:
+                    if isinstance(raw, (bytes, bytearray)):
+                        raw = raw.decode("utf-8")
+                    msg = json.loads(raw)
+                    if msg.get("kind") == "events":
+                        for ev in msg.get("events", []):
+                            if isinstance(ev, dict):
+                                _queue_event_for_delivery(
+                                    outbox=outbox,
+                                    run_id=run_id,
+                                    chat_id=chat_id,
+                                    ev=ev,
+                                )
+                    await delivery_worker.process_once_async(
+                        limit=200,
+                        now=datetime.utcnow(),
+                    )
+                    # heartbeat: ignore
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 10.0)
+
+
 async def cmd_subscribe(update: Any, context: Any) -> None:
     state: BotState = context.bot_data["state"]
     if not _check_auth(state, update):
@@ -1824,83 +2693,7 @@ async def cmd_subscribe(update: Any, context: Any) -> None:
         await msg.reply_text("Already subscribed")
         return
 
-    async def stream_loop() -> None:
-        # Prefer WebSocket streaming; fall back to HTTP polling.
-        ws_url = state.api_base.rstrip("/")
-        if ws_url.startswith("https://"):
-            ws_url = "wss://" + ws_url[len("https://") :]
-        elif ws_url.startswith("http://"):
-            ws_url = "ws://" + ws_url[len("http://") :]
-        ws_url = (
-            f"{ws_url}/runs/{run_id}/stream"
-            "?types=FillEvent,MetricsEvent,NotificationIntentEvent"
-        )
-        outbox = NotificationOutbox(_subscription_outbox_path(run_id, chat_id))
-
-        async def send_from_outbox(msg: Any) -> None:
-            payload = msg.payload
-            await context.bot.send_message(
-                chat_id=int(payload["chat_id"]),
-                text=str(payload["text"]),
-            )
-
-        delivery_worker = OutboxNotifierWorker(
-            outbox=outbox,
-            sender=send_from_outbox,
-            retry_delay_seconds=2,
-            max_attempts=5,
-        )
-
-        try:
-            import importlib
-
-            websockets = importlib.import_module("websockets")
-        except Exception:
-            websockets = None
-
-        if websockets is None:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text="websockets not installed; falling back to polling",
-            )
-            await _poll_events_loop(context, state, chat_id, run_id)
-            return
-
-        backoff = 0.5
-        while True:
-            try:
-                async with websockets.connect(
-                    ws_url,
-                    **_ws_headers_kwargs(websockets, state.api_key),
-                    ping_interval=20,
-                    ping_timeout=20,
-                ) as ws:
-                    backoff = 0.5
-                    async for raw in ws:
-                        if isinstance(raw, (bytes, bytearray)):
-                            raw = raw.decode("utf-8")
-                        msg = json.loads(raw)
-                        if msg.get("kind") == "events":
-                            for ev in msg.get("events", []):
-                                if isinstance(ev, dict):
-                                    _queue_event_for_delivery(
-                                        outbox=outbox,
-                                        run_id=run_id,
-                                        chat_id=chat_id,
-                                        ev=ev,
-                                    )
-                        await delivery_worker.process_once_async(
-                            limit=200,
-                            now=datetime.utcnow(),
-                        )
-                        # heartbeat: ignore
-            except asyncio.CancelledError:
-                return
-            except Exception:
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 10.0)
-
-    task = asyncio.create_task(stream_loop())
+    task = asyncio.create_task(_subscription_stream_loop(context, state, chat_id, run_id))
     state.subscriptions[key] = task
     await msg.reply_text(
         f"Subscribed: {run_id}",
@@ -1944,7 +2737,7 @@ async def _poll_events_loop(
         retry_delay_seconds=2,
         max_attempts=5,
     )
-    async with httpx.AsyncClient() as client:
+    async with _shared_http_client_manager() as client:
         while True:
             data = await _api(
                 client,
@@ -2063,6 +2856,15 @@ def main() -> None:
     app.add_handler(CommandHandler("run", cmd_run))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("summary", cmd_summary))
+    app.add_handler(CommandHandler("program_start", cmd_program_start))
+    app.add_handler(CommandHandler("program_stop", cmd_program_stop))
+    app.add_handler(CommandHandler("plugins", cmd_plugins))
+    app.add_handler(CommandHandler("plugin_load", cmd_plugin_load))
+    app.add_handler(CommandHandler("plugin_unload", cmd_plugin_unload))
+    app.add_handler(CommandHandler("plugin_help", cmd_plugin_help))
+    app.add_handler(CommandHandler("program_help", cmd_program_help))
+    app.add_handler(CommandHandler("run_compare", cmd_run_compare))
+    app.add_handler(CommandHandler("run_signals", cmd_run_signals))
     app.add_handler(CommandHandler("stop", cmd_stop))
     app.add_handler(CommandHandler("subscribe", cmd_subscribe))
     app.add_handler(CommandHandler("unsubscribe", cmd_unsubscribe))
@@ -2084,7 +2886,13 @@ def main() -> None:
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     app.add_error_handler(_on_handler_error)
 
-    app.run_polling(close_loop=False)
+    try:
+        app.run_polling(close_loop=False)
+    finally:
+        try:
+            asyncio.run(_close_shared_http_client())
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

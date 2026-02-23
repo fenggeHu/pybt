@@ -1,0 +1,13 @@
+{
+  "plugin": "eastmoney_marketdata",
+  "params": {
+    "symbol": "600000",
+    "transport": "sse",
+    // SSE + snapshot_api fallback
+    "snapshot_fallback": true,
+    "max_reconnects": 3,
+    "backoff_seconds": 0.5,
+    "connect_timeout": 5.0,
+    "read_timeout": 15.0
+  }
+}

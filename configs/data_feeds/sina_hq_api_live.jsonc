@@ -1,0 +1,24 @@
+{
+  "plugin": "sina_marketdata",
+  "params": {
+    "symbol": "600000",
+    "transport": "api",
+    "url": "https://hq.sinajs.cn/list={symbol}",
+    "response_mode": "sina_hq",
+    "symbol_transform": "cn_prefix",
+    "field_map": {
+      // sina payload index: 3=price, 8=volume, 9=amount
+      "price": "3",
+      "volume": "8",
+      "amount": "9"
+    },
+    "headers": {
+      "User-Agent": "Mozilla/5.0",
+      "Referer": "https://finance.sina.com.cn/"
+    },
+    "max_reconnects": 3,
+    "backoff_seconds": 0.5,
+    "connect_timeout": 3.0,
+    "read_timeout": 8.0
+  }
+}

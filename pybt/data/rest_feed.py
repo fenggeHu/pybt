@@ -29,6 +29,7 @@ except ImportError:  # pragma: no cover - optional dependency
 
 from pybt.core.interfaces import DataFeed
 from pybt.core.models import Bar
+from pybt.core.events import DataSourceStatusEvent
 from pybt.errors import FeedError
 
 
@@ -668,10 +669,10 @@ def _quote_from_field_map(
     }
 
 
-class EastmoneyQuotePlugin(ABC):
+class QuoteSourcePlugin(ABC):
     @abstractmethod
     def next_quote(
-        self, feed: "EastmoneySSEExtendedFeed"
+        self, feed: "MultiSourceQuoteFeed"
     ) -> Optional[dict[str, float]]:
         """Return one quote or None when this plugin has no output right now."""
 
@@ -679,7 +680,7 @@ class EastmoneyQuotePlugin(ABC):
         return
 
 
-class EastmoneySSESourcePlugin(EastmoneyQuotePlugin):
+class SSEQuoteSourcePlugin(QuoteSourcePlugin):
     def __init__(
         self,
         *,
@@ -717,7 +718,7 @@ class EastmoneySSESourcePlugin(EastmoneyQuotePlugin):
         self._now = time.monotonic
 
     def next_quote(
-        self, feed: "EastmoneySSEExtendedFeed"
+        self, feed: "MultiSourceQuoteFeed"
     ) -> Optional[dict[str, float]]:
         if (
             isinstance(self._reconnect_every_ticks, int)
@@ -774,7 +775,7 @@ class EastmoneySSESourcePlugin(EastmoneyQuotePlugin):
         if callable(close):
             close()
 
-    def _open_stream(self, feed: "EastmoneySSEExtendedFeed") -> None:
+    def _open_stream(self, feed: "MultiSourceQuoteFeed") -> None:
         url = self._sse_url
         if not url:
             url = _build_default_sse_url(
@@ -811,7 +812,7 @@ class EastmoneySSESourcePlugin(EastmoneyQuotePlugin):
         )
 
     def _quote_from_payload(
-        self, feed: "EastmoneySSEExtendedFeed", payload: str
+        self, feed: "MultiSourceQuoteFeed", payload: str
     ) -> Optional[dict[str, float]]:
         try:
             event = json.loads(payload)
@@ -851,7 +852,7 @@ class EastmoneySSESourcePlugin(EastmoneyQuotePlugin):
         return self._parser(payload)
 
     def _quote_from_mapping_or_field_map(
-        self, source: Mapping[str, Any], *, feed: "EastmoneySSEExtendedFeed"
+        self, source: Mapping[str, Any], *, feed: "MultiSourceQuoteFeed"
     ) -> Optional[dict[str, float]]:
         if self._field_map is not None:
             mapped = _quote_from_field_map(source, self._field_map)
@@ -860,7 +861,7 @@ class EastmoneySSESourcePlugin(EastmoneyQuotePlugin):
         return _quote_from_mapping(source, price_scale=feed.price_scale)
 
 
-class EastmoneySnapshotAPIPlugin(EastmoneyQuotePlugin):
+class SnapshotAPIQuoteSourcePlugin(QuoteSourcePlugin):
     def __init__(
         self,
         *,
@@ -887,7 +888,7 @@ class EastmoneySnapshotAPIPlugin(EastmoneyQuotePlugin):
         self._field_map = dict(field_map) if field_map is not None else None
 
     def next_quote(
-        self, feed: "EastmoneySSEExtendedFeed"
+        self, feed: "MultiSourceQuoteFeed"
     ) -> Optional[dict[str, float]]:
         if self._on_demand_only and (not feed.snapshot_requested):
             return None
@@ -925,7 +926,7 @@ class EastmoneySnapshotAPIPlugin(EastmoneyQuotePlugin):
                 close()
 
     def _quote_from_mapping_or_field_map(
-        self, source: Mapping[str, Any], *, feed: "EastmoneySSEExtendedFeed"
+        self, source: Mapping[str, Any], *, feed: "MultiSourceQuoteFeed"
     ) -> Optional[dict[str, float]]:
         if self._field_map is not None:
             mapped = _quote_from_field_map(source, self._field_map)
@@ -978,7 +979,7 @@ def _decode_sina_hq_payload(response: Any, *, encoding: str = "gbk") -> Any:
     return match.group(1).split(",")
 
 
-class APIQuoteSourcePlugin(EastmoneyQuotePlugin):
+class APIQuoteSourcePlugin(QuoteSourcePlugin):
     def __init__(
         self,
         *,
@@ -1013,7 +1014,7 @@ class APIQuoteSourcePlugin(EastmoneyQuotePlugin):
         self._encoding = encoding
 
     def next_quote(
-        self, feed: "EastmoneySSEExtendedFeed"
+        self, feed: "MultiSourceQuoteFeed"
     ) -> Optional[dict[str, float]]:
         if self._on_demand_only and (not feed.snapshot_requested):
             return None
@@ -1056,7 +1057,7 @@ class APIQuoteSourcePlugin(EastmoneyQuotePlugin):
         raise ValueError(f"Unsupported api response_mode: {self._response_mode}")
 
     def _quote_from_payload(
-        self, payload: Any, *, feed: "EastmoneySSEExtendedFeed"
+        self, payload: Any, *, feed: "MultiSourceQuoteFeed"
     ) -> Optional[dict[str, float]]:
         if self._field_map is not None:
             mapped = _quote_from_field_map(payload, self._field_map)
@@ -1086,7 +1087,7 @@ class APIQuoteSourcePlugin(EastmoneyQuotePlugin):
         raise ValueError(f"Unsupported symbol_transform: {mode}")
 
 
-class EastmoneyWebSocketSourcePlugin(EastmoneyQuotePlugin):
+class WebSocketQuoteSourcePlugin(QuoteSourcePlugin):
     def __init__(
         self,
         *,
@@ -1111,7 +1112,7 @@ class EastmoneyWebSocketSourcePlugin(EastmoneyQuotePlugin):
         self._ws_context: Any = None
 
     def next_quote(
-        self, feed: "EastmoneySSEExtendedFeed"
+        self, feed: "MultiSourceQuoteFeed"
     ) -> Optional[dict[str, float]]:
         if self._loop.is_running():
             raise FeedError("websocket plugin loop is already running")
@@ -1126,7 +1127,7 @@ class EastmoneyWebSocketSourcePlugin(EastmoneyQuotePlugin):
             self._loop.close()
 
     async def _next_quote_async(
-        self, feed: "EastmoneySSEExtendedFeed"
+        self, feed: "MultiSourceQuoteFeed"
     ) -> Optional[dict[str, float]]:
         ws = await self._ensure_ws()
         if self._heartbeat_interval is not None and hasattr(ws, "ping"):
@@ -1187,7 +1188,7 @@ class EastmoneyWebSocketSourcePlugin(EastmoneyQuotePlugin):
                 await result
 
     def _quote_from_mapping_or_field_map(
-        self, source: Mapping[str, Any], *, feed: "EastmoneySSEExtendedFeed"
+        self, source: Mapping[str, Any], *, feed: "MultiSourceQuoteFeed"
     ) -> Optional[dict[str, float]]:
         if self._field_map is not None:
             mapped = _quote_from_field_map(source, self._field_map)
@@ -1196,7 +1197,7 @@ class EastmoneyWebSocketSourcePlugin(EastmoneyQuotePlugin):
         return _quote_from_mapping(source, price_scale=feed.price_scale)
 
 
-class EastmoneySSEExtendedFeed(DataFeed):
+class MultiSourceQuoteFeed(DataFeed):
     """Pluggable real-time quote feed.
 
     Source transport is fully config-driven. You can configure one or more
@@ -1231,6 +1232,9 @@ class EastmoneySSEExtendedFeed(DataFeed):
         price_scale: float = 100.0,
         reconnect_every_ticks: Optional[int] = None,
         heartbeat_timeout: Optional[float] = None,
+        source_failure_threshold: int = 2,
+        source_cooldown_seconds: float = 2.0,
+        emit_source_status: bool = True,
         sources: Optional[list[Mapping[str, Any]]] = None,
     ) -> None:
         super().__init__()
@@ -1247,9 +1251,13 @@ class EastmoneySSEExtendedFeed(DataFeed):
         self.read_timeout = read_timeout
         self.price_scale = price_scale
         self.sse_url = sse_url
+        self.source_failure_threshold = max(1, int(source_failure_threshold))
+        self.source_cooldown_seconds = max(0.0, float(source_cooldown_seconds))
+        self.emit_source_status = bool(emit_source_status)
         self._ticks = 0
         self._last_price: Optional[float] = None
         self._snapshot_requested = False
+        self._clock = time.monotonic
 
         request_fn = get_request or (requests.get if requests is not None else None)
         parser_fn = parser or _default_payload_parser
@@ -1296,6 +1304,7 @@ class EastmoneySSEExtendedFeed(DataFeed):
                     "on_demand_only": True,
                 },
             ]
+        self._source_labels: list[str] = []
         self._plugins = self._build_plugins(
             specs=specs,
             get_request=request_fn,
@@ -1310,6 +1319,8 @@ class EastmoneySSEExtendedFeed(DataFeed):
         )
         if not self._plugins:
             raise FeedError("Feed has no enabled source plugins")
+        self._source_failures: list[int] = [0] * len(self._plugins)
+        self._source_suppress_until: list[float] = [0.0] * len(self._plugins)
 
     @property
     def snapshot_requested(self) -> bool:
@@ -1325,6 +1336,8 @@ class EastmoneySSEExtendedFeed(DataFeed):
         self._ticks = 0
         self._last_price = None
         self._snapshot_requested = False
+        self._source_failures = [0] * len(self._plugins)
+        self._source_suppress_until = [0.0] * len(self._plugins)
         self._close_plugins()
 
     def on_stop(self) -> None:
@@ -1339,22 +1352,30 @@ class EastmoneySSEExtendedFeed(DataFeed):
         attempts = 0
         last_exc: Optional[Exception] = None
         while attempts <= self.max_reconnects:
-            try:
-                for plugin in self._plugins:
+            produced = False
+            for idx, plugin in enumerate(self._plugins):
+                if self._is_source_suppressed(idx):
+                    continue
+                try:
                     quote = plugin.next_quote(self)
-                    if quote is None:
-                        continue
-                    self._publish_quote(quote)
-                    return
-                raise FeedError("No source plugin produced quote")
-            except Exception as exc:
-                last_exc = exc
-                if attempts == self.max_reconnects:
-                    break
-                self._close_plugins()
-                delay = self.backoff_seconds * (2**attempts)
-                time.sleep(delay)
-                attempts += 1
+                except Exception as exc:
+                    last_exc = exc
+                    self._mark_source_failure(idx, exc)
+                    continue
+                if quote is None:
+                    continue
+                self._mark_source_success(idx)
+                self._publish_quote(quote)
+                produced = True
+                break
+
+            if produced:
+                return
+            if attempts == self.max_reconnects:
+                break
+            delay = self.backoff_seconds * (2**attempts)
+            time.sleep(delay)
+            attempts += 1
         raise FeedError(
             f"Source plugin feed failed after {self.max_reconnects + 1} attempts"
         ) from last_exc
@@ -1384,6 +1405,85 @@ class EastmoneySSEExtendedFeed(DataFeed):
             except Exception:
                 continue
 
+    def _source_name(self, idx: int) -> str:
+        if 0 <= idx < len(self._source_labels):
+            return self._source_labels[idx]
+        return f"source_{idx}"
+
+    def _is_source_suppressed(self, idx: int) -> bool:
+        until = self._source_suppress_until[idx]
+        if until <= 0:
+            return False
+        now = self._clock()
+        if now < until:
+            return True
+        self._source_suppress_until[idx] = 0.0
+        self._source_failures[idx] = 0
+        self._emit_source_status(
+            idx,
+            status="recovered",
+            message="source cooldown elapsed",
+        )
+        return False
+
+    def _mark_source_failure(self, idx: int, exc: Exception) -> None:
+        self._source_failures[idx] += 1
+        failures = self._source_failures[idx]
+        message = f"{type(exc).__name__}: {exc}"
+        cooldown = 0.0
+        if failures >= self.source_failure_threshold:
+            cooldown = self.source_cooldown_seconds
+            if cooldown > 0:
+                self._source_suppress_until[idx] = self._clock() + cooldown
+            try:
+                self._plugins[idx].close()
+            except Exception:
+                pass
+        self._emit_source_status(
+            idx,
+            status="error",
+            message=message,
+            failures=failures,
+            cooldown_seconds=cooldown,
+        )
+
+    def _mark_source_success(self, idx: int) -> None:
+        if self._source_failures[idx] <= 0:
+            return
+        self._source_failures[idx] = 0
+        self._source_suppress_until[idx] = 0.0
+        self._emit_source_status(
+            idx,
+            status="ok",
+            message="source resumed",
+        )
+
+    def _emit_source_status(
+        self,
+        idx: int,
+        *,
+        status: str,
+        message: str,
+        failures: int = 0,
+        cooldown_seconds: float = 0.0,
+    ) -> None:
+        if not self.emit_source_status:
+            return
+        try:
+            self.bus.publish(
+                DataSourceStatusEvent(
+                    timestamp=datetime.utcnow(),
+                    source_index=idx,
+                    source_type=self._source_name(idx),
+                    status=status,
+                    message=message,
+                    failures=failures,
+                    cooldown_seconds=cooldown_seconds,
+                )
+            )
+        except Exception:
+            return
+
     def _build_plugins(
         self,
         *,
@@ -1397,14 +1497,15 @@ class EastmoneySSEExtendedFeed(DataFeed):
         default_snapshot_ut: str,
         default_snapshot_headers: Mapping[str, str],
         default_snapshot_params: Mapping[str, Any],
-    ) -> list[EastmoneyQuotePlugin]:
-        plugins: list[EastmoneyQuotePlugin] = []
+    ) -> list[QuoteSourcePlugin]:
+        plugins: list[QuoteSourcePlugin] = []
         for idx, spec in enumerate(specs):
             if not isinstance(spec, Mapping):
                 raise ValueError(f"sources[{idx}] must be an object")
             if not self._is_enabled(spec.get("enabled", True)):
                 continue
             source_type = str(spec.get("type", "")).strip().lower()
+            label = source_type or f"source_{idx}"
             if source_type == "sse":
                 if get_request is None:
                     raise FeedError(
@@ -1414,7 +1515,7 @@ class EastmoneySSEExtendedFeed(DataFeed):
                     spec.get("field_map"), "sse.field_map"
                 )
                 plugins.append(
-                    EastmoneySSESourcePlugin(
+                    SSEQuoteSourcePlugin(
                         get_request=get_request,
                         parser=parser,
                         sse_url=self._as_optional_str(spec.get("sse_url")),
@@ -1440,6 +1541,7 @@ class EastmoneySSEExtendedFeed(DataFeed):
                         noop=self._as_optional_int(spec.get("noop")),
                     )
                 )
+                self._source_labels.append(label)
                 continue
             if source_type in {"api", "snapshot_api", "snapshot"}:
                 if source_type == "api":
@@ -1482,6 +1584,7 @@ class EastmoneySSEExtendedFeed(DataFeed):
                             encoding=self._as_optional_str(spec.get("encoding")),
                         )
                     )
+                    self._source_labels.append(label)
                     continue
                 if get_request is None:
                     raise FeedError(
@@ -1491,7 +1594,7 @@ class EastmoneySSEExtendedFeed(DataFeed):
                     spec.get("field_map"), "snapshot_api.field_map"
                 )
                 plugins.append(
-                    EastmoneySnapshotAPIPlugin(
+                    SnapshotAPIQuoteSourcePlugin(
                         get_request=get_request,
                         snapshot_url=str(
                             spec.get("snapshot_url", default_snapshot_url)
@@ -1514,6 +1617,7 @@ class EastmoneySSEExtendedFeed(DataFeed):
                         field_map=field_map,
                     )
                 )
+                self._source_labels.append(label)
                 continue
             if source_type == "websocket":
                 ws_url = spec.get("url")
@@ -1523,7 +1627,7 @@ class EastmoneySSEExtendedFeed(DataFeed):
                     spec.get("field_map"), "websocket.field_map"
                 )
                 plugins.append(
-                    EastmoneyWebSocketSourcePlugin(
+                    WebSocketQuoteSourcePlugin(
                         url=ws_url,
                         headers=self._merge_headers({}, spec.get("headers")),
                         parser=parser,
@@ -1533,6 +1637,7 @@ class EastmoneySSEExtendedFeed(DataFeed):
                         field_map=field_map,
                     )
                 )
+                self._source_labels.append(label)
                 continue
             if source_type == "plugin":
                 class_path = spec.get("class_path")
@@ -1552,6 +1657,7 @@ class EastmoneySSEExtendedFeed(DataFeed):
                         f"plugin '{class_path}' must implement next_quote(feed)"
                     )
                 plugins.append(plugin)  # type: ignore[arg-type]
+                self._source_labels.append(class_path)
                 continue
             raise ValueError(f"Unsupported source type: {source_type}")
         return plugins
@@ -1619,30 +1725,24 @@ class EastmoneySSEExtendedFeed(DataFeed):
         return bool(value)
 
 
-class QuoteSourcePlugin(EastmoneyQuotePlugin):
-    """Provider-agnostic alias of EastmoneyQuotePlugin."""
-
-
-class SSEQuoteSourcePlugin(EastmoneySSESourcePlugin):
-    """Provider-agnostic alias of EastmoneySSESourcePlugin."""
-
-
-class SnapshotAPIQuoteSourcePlugin(EastmoneySnapshotAPIPlugin):
-    """Provider-agnostic alias of EastmoneySnapshotAPIPlugin."""
-
-
-class WebSocketQuoteSourcePlugin(EastmoneyWebSocketSourcePlugin):
-    """Provider-agnostic alias of EastmoneyWebSocketSourcePlugin."""
-
-
-class ComposableQuoteFeed(EastmoneySSEExtendedFeed):
-    """Provider-agnostic alias of EastmoneySSEExtendedFeed."""
+# Backward-compatible aliases.
+EastmoneyQuotePlugin = QuoteSourcePlugin
+EastmoneySSESourcePlugin = SSEQuoteSourcePlugin
+EastmoneySnapshotAPIPlugin = SnapshotAPIQuoteSourcePlugin
+EastmoneyWebSocketSourcePlugin = WebSocketQuoteSourcePlugin
+EastmoneySSEExtendedFeed = MultiSourceQuoteFeed
+ComposableQuoteFeed = MultiSourceQuoteFeed
 
 
 __all__ = [
     "RESTPollingFeed",
     "EastmoneySSEFeed",
     "EastmoneySSEExtendedFeed",
+    "MultiSourceQuoteFeed",
+    "EastmoneyQuotePlugin",
+    "EastmoneySSESourcePlugin",
+    "EastmoneySnapshotAPIPlugin",
+    "EastmoneyWebSocketSourcePlugin",
     "QuoteSourcePlugin",
     "SSEQuoteSourcePlugin",
     "SnapshotAPIQuoteSourcePlugin",

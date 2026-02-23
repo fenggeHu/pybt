@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pybt.core.event_bus import EventBus
-from pybt.core.events import MarketEvent
+from pybt.core.events import DataSourceStatusEvent, MarketEvent
 from pybt.data.rest_feed import ComposableQuoteFeed, EastmoneySSEExtendedFeed
 
 
@@ -44,6 +44,11 @@ class _CustomStaticPlugin:
 
     def next_quote(self, _feed: EastmoneySSEExtendedFeed):
         return {"price": self.price}
+
+
+class _FailingPlugin:
+    def next_quote(self, _feed: EastmoneySSEExtendedFeed):
+        raise RuntimeError("source down")
 
 
 def test_eastmoney_sse_ext_feed_reuses_stream_across_ticks() -> None:
@@ -219,6 +224,44 @@ def test_eastmoney_sse_ext_feed_supports_custom_plugin_class_path() -> None:
 
     assert len(captured) == 1
     assert captured[0].fields["close"] == 12.34
+
+
+def test_eastmoney_sse_ext_feed_skips_failed_source_and_uses_fallback() -> None:
+    feed = EastmoneySSEExtendedFeed(
+        symbol="600000",
+        max_ticks=1,
+        max_reconnects=0,
+        backoff_seconds=0.0,
+        source_failure_threshold=1,
+        source_cooldown_seconds=10.0,
+        sources=[
+            {
+                "type": "plugin",
+                "class_path": "tests.test_eastmoney_sse_ext_feed._FailingPlugin",
+                "params": {},
+            },
+            {
+                "type": "plugin",
+                "class_path": "tests.test_eastmoney_sse_ext_feed._CustomStaticPlugin",
+                "params": {"price": 33.0},
+            },
+        ],
+    )
+    bus = EventBus()
+    feed.bind(bus)
+    market_events: list[MarketEvent] = []
+    source_events: list[DataSourceStatusEvent] = []
+    bus.subscribe(MarketEvent, market_events.append)
+    bus.subscribe(DataSourceStatusEvent, source_events.append)
+
+    feed.prime()
+    feed.next()
+    bus.dispatch()
+
+    assert len(market_events) == 1
+    assert market_events[0].fields["close"] == 33.0
+    assert source_events, "expected source status event for failed source"
+    assert source_events[0].status == "error"
 
 
 def test_eastmoney_sse_ext_feed_supports_sse_field_map_paths() -> None:

@@ -17,9 +17,14 @@ def main() -> None:
         raise SystemExit("PYBT_API_KEY is required")
     base_dir = Path(os.environ.get("PYBT_BASE_DIR", str(Path.home() / ".pybt")))
     max_runs = int(os.environ.get("PYBT_MAX_CONCURRENT_RUNS", "4"))
+    plugin_registry_raw = os.environ.get("PYBT_PLUGIN_REGISTRY", "").strip()
+    plugin_registry = Path(plugin_registry_raw) if plugin_registry_raw else None
 
     settings = ServerSettings(
-        base_dir=base_dir, api_key=api_key, max_concurrent_runs=max_runs
+        base_dir=base_dir,
+        api_key=api_key,
+        max_concurrent_runs=max_runs,
+        plugin_registry_path=plugin_registry,
     )
     app = create_app(settings)
     uvicorn.run(app, host=host, port=port, log_level="info")

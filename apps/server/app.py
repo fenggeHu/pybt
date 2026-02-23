@@ -18,6 +18,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse
 
 from pybt.configuration import iter_definition_dicts, load_engine_from_dict
+from pybt.configuration.plugins import PLUGIN_KINDS
 
 from .config_store import ConfigNameError, ConfigStore
 from .models import (
@@ -34,6 +35,7 @@ from .models import (
     SummaryResponse,
 )
 from .run_manager import RunManager
+from .plugin_store import PluginStore, PluginStoreError
 from .settings import ServerSettings
 
 
@@ -55,6 +57,8 @@ class ErrorCode(str, Enum):
     INTERNAL_ERROR = "internal_error"
     HTTP_ERROR = "http_error"
     CONFIG_VALIDATION_ERROR = "config_validation_error"
+    PLUGIN_NOT_FOUND = "plugin_not_found"
+    PLUGIN_INVALID_REQUEST = "plugin_invalid_request"
 
 
 class ErrorHint(str, Enum):
@@ -67,6 +71,7 @@ class ErrorHint(str, Enum):
     RUN_CAPACITY = "Stop existing runs or increase PYBT_MAX_CONCURRENT_RUNS."
     RUN_STILL_RUNNING = "Retry after run state becomes completed/failed/stopped."
     SUMMARY_NOT_AVAILABLE = "Ensure reporters produce summary output for this run."
+    CHECK_PLUGINS = "Use /plugins to inspect available plugins."
 
 
 def _enum_text(value: Any) -> str:
@@ -169,6 +174,7 @@ def create_app(settings: ServerSettings) -> FastAPI:
     runs = RunManager(
         runs_dir=settings.runs_dir, max_concurrent_runs=settings.max_concurrent_runs
     )
+    plugins = PluginStore(settings.plugin_registry_path)
 
     def require_api_key(
         request: Request,
@@ -194,6 +200,78 @@ def create_app(settings: ServerSettings) -> FastAPI:
     @app.get("/configs", dependencies=[Depends(require_api_key)])
     def list_configs() -> dict[str, Any]:
         return {"ok": True, "configs": store.list()}
+
+    @app.get("/plugins", dependencies=[Depends(require_api_key)])
+    def list_plugins(
+        request: Request,
+        kind: Optional[str] = None,
+        enabled: Optional[bool] = None,
+    ) -> dict[str, Any]:
+        if kind is not None and kind not in PLUGIN_KINDS:
+            raise _http_error(
+                request,
+                status_code=400,
+                code=ErrorCode.PLUGIN_INVALID_REQUEST,
+                message=f"kind must be one of {sorted(PLUGIN_KINDS)}",
+            )
+        try:
+            items = plugins.list(kind=kind, enabled=enabled)
+        except PluginStoreError as exc:
+            raise _http_error(
+                request,
+                status_code=400,
+                code=ErrorCode.PLUGIN_INVALID_REQUEST,
+                message=str(exc),
+            )
+        return {
+            "ok": True,
+            "registry_path": str(plugins.registry_path),
+            "plugins": items,
+        }
+
+    @app.post("/plugins/{name}/load", dependencies=[Depends(require_api_key)])
+    def load_plugin(name: str, request: Request) -> dict[str, Any]:
+        try:
+            item = plugins.set_enabled(name, enabled=True)
+        except KeyError:
+            raise _http_error(
+                request,
+                status_code=404,
+                code=ErrorCode.PLUGIN_NOT_FOUND,
+                message="plugin not found",
+                hint=ErrorHint.CHECK_PLUGINS,
+                details={"name": name},
+            )
+        except PluginStoreError as exc:
+            raise _http_error(
+                request,
+                status_code=400,
+                code=ErrorCode.PLUGIN_INVALID_REQUEST,
+                message=str(exc),
+            )
+        return {"ok": True, "plugin": item}
+
+    @app.post("/plugins/{name}/unload", dependencies=[Depends(require_api_key)])
+    def unload_plugin(name: str, request: Request) -> dict[str, Any]:
+        try:
+            item = plugins.set_enabled(name, enabled=False)
+        except KeyError:
+            raise _http_error(
+                request,
+                status_code=404,
+                code=ErrorCode.PLUGIN_NOT_FOUND,
+                message="plugin not found",
+                hint=ErrorHint.CHECK_PLUGINS,
+                details={"name": name},
+            )
+        except PluginStoreError as exc:
+            raise _http_error(
+                request,
+                status_code=400,
+                code=ErrorCode.PLUGIN_INVALID_REQUEST,
+                message=str(exc),
+            )
+        return {"ok": True, "plugin": item}
 
     @app.post(
         "/configs/validate",
@@ -538,8 +616,55 @@ def create_app(settings: ServerSettings) -> FastAPI:
                     hint=ErrorHint.SUMMARY_NOT_AVAILABLE,
                     request_id=_request_id(request),
                 ),
-            )
+        )
         return SummaryResponse(ok=True, run_id=run_id, summary=r.summary)
+
+    @app.get("/runs/{run_id}/compare/{other_run_id}", dependencies=[Depends(require_api_key)])
+    def compare_runs(run_id: str, other_run_id: str, request: Request) -> dict[str, Any]:
+        try:
+            result = runs.compare_runs(run_id, other_run_id)
+        except KeyError as exc:
+            missing = str(exc).strip("'")
+            raise _http_error(
+                request,
+                status_code=404,
+                code=ErrorCode.RUN_NOT_FOUND,
+                message="run not found",
+                hint=ErrorHint.CHECK_RUNS,
+                details={"run_id": missing},
+            )
+        return {"ok": True, "comparison": result}
+
+    @app.get("/runs/{run_id}/signals", dependencies=[Depends(require_api_key)])
+    def get_signal_debug(
+        run_id: str,
+        request: Request,
+        since_seq: int = 0,
+        limit: int = 200,
+        strategy_id: Optional[str] = None,
+        symbol: Optional[str] = None,
+        include_debug: bool = False,
+    ) -> dict[str, Any]:
+        limit = max(1, min(limit, 2000))
+        try:
+            last_seq, items = runs.get_signal_events(
+                run_id,
+                since_seq=since_seq,
+                limit=limit,
+                strategy_id=strategy_id,
+                symbol=symbol,
+                include_debug=include_debug,
+            )
+        except KeyError:
+            raise _http_error(
+                request,
+                status_code=404,
+                code=ErrorCode.RUN_NOT_FOUND,
+                message="run not found",
+                hint=ErrorHint.CHECK_RUNS,
+                details={"run_id": run_id},
+            )
+        return {"ok": True, "run_id": run_id, "last_seq": last_seq, "signals": items}
 
     @app.exception_handler(HTTPException)
     def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:

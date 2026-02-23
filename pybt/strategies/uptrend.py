@@ -3,7 +3,7 @@ from statistics import mean, pstdev
 from typing import Deque
 
 from pybt.core.enums import Exposure, SignalDirection
-from pybt.core.events import MarketEvent, SignalEvent
+from pybt.core.events import MarketEvent, SignalEvent, StrategyDebugEvent
 from pybt.core.interfaces import Strategy
 
 
@@ -20,6 +20,7 @@ class UptrendBreakoutStrategy(Strategy):
         window: int = 20,
         breakout_factor: float = 1.5,
         strategy_id: str = "uptrend",
+        debug_signal: bool = False,
     ) -> None:
         super().__init__()
         if window <= 1:
@@ -30,6 +31,7 @@ class UptrendBreakoutStrategy(Strategy):
         self.window = window
         self.breakout_factor = breakout_factor
         self.strategy_id = strategy_id
+        self.debug_signal = debug_signal
         self._prices: Deque[float] = deque(maxlen=window)
         self._exposure: Exposure = Exposure.FLAT
 
@@ -45,6 +47,17 @@ class UptrendBreakoutStrategy(Strategy):
         self._prices.append(price)
 
         if len(self._prices) < self.window:
+            if self.debug_signal:
+                self._emit_debug(
+                    event=event,
+                    stage="warmup",
+                    message="insufficient bars",
+                    details={
+                        "price": price,
+                        "bars_ready": len(self._prices),
+                        "bars_required": self.window,
+                    },
+                )
             return
 
         avg = mean(self._prices)
@@ -61,6 +74,19 @@ class UptrendBreakoutStrategy(Strategy):
             self._exposure = Exposure.FLAT
 
         if direction is None:
+            if self.debug_signal:
+                self._emit_debug(
+                    event=event,
+                    stage="hold",
+                    message="no breakout/exit trigger",
+                    details={
+                        "price": price,
+                        "avg": avg,
+                        "threshold": threshold,
+                        "volatility": volatility,
+                        "exposure": self._exposure.value,
+                    },
+                )
             return
 
         strength = max(price - threshold, 0.0) if direction == SignalDirection.LONG else max(threshold - price, 0.0)
@@ -70,5 +96,44 @@ class UptrendBreakoutStrategy(Strategy):
             symbol=self.symbol,
             direction=direction,
             strength=strength,
+            meta={
+                "price": price,
+                "avg": avg,
+                "threshold": threshold,
+                "volatility": volatility,
+            },
         )
         self.bus.publish(signal)
+        if self.debug_signal:
+            self._emit_debug(
+                event=event,
+                stage="signal",
+                message=f"emit {direction.value}",
+                details={
+                    "price": price,
+                    "avg": avg,
+                    "threshold": threshold,
+                    "volatility": volatility,
+                    "direction": direction.value,
+                    "strength": strength,
+                },
+            )
+
+    def _emit_debug(
+        self,
+        *,
+        event: MarketEvent,
+        stage: str,
+        message: str,
+        details: dict[str, float | int | str],
+    ) -> None:
+        self.bus.publish(
+            StrategyDebugEvent(
+                timestamp=event.timestamp,
+                strategy_id=self.strategy_id,
+                symbol=self.symbol,
+                stage=stage,
+                message=message,
+                details=details,
+            )
+        )

@@ -24,6 +24,7 @@ from pybt.configuration import load_engine_from_dict, load_engine_from_json
 from pybt.core import (
     BacktestEngine,
     Bar,
+    DataSourceStatusEvent,
     EngineConfig,
     Event,
     EventBus,
@@ -36,6 +37,7 @@ from pybt.core import (
     OrderType,
     SignalDirection,
     SignalEvent,
+    StrategyDebugEvent,
 )
 from pybt.core.logging import configure_logging, log_event
 
@@ -54,6 +56,8 @@ __all__ = [
     "OrderSide",
     "OrderType",
     "Bar",
+    "DataSourceStatusEvent",
+    "StrategyDebugEvent",
     "EquityCurveReporter",
     "DetailedReporter",
     "PyBTError",

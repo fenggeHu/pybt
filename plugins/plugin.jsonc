@@ -1,0 +1,705 @@
+{
+  "version": 1,
+  "plugin_dir": ".",
+  "plugins": [
+    {
+      "name": "local_csv_feed",
+      "kind": "data_feed",
+      "summary": "CSV/Parquet daily bars",
+      "defaults": {},
+      "params": [
+        {
+          "name": "path",
+          "type": "str",
+          "required": true
+        },
+        {
+          "name": "symbol",
+          "type": "str"
+        },
+        {
+          "name": "start",
+          "type": "str"
+        },
+        {
+          "name": "end",
+          "type": "str"
+        }
+      ],
+      "strict_params": true
+    },
+    {
+      "name": "inmemory_feed",
+      "kind": "data_feed",
+      "summary": "In-memory bars",
+      "defaults": {},
+      "params": [
+        {
+          "name": "bars",
+          "type": "list[bar]",
+          "required": true
+        }
+      ],
+      "strict_params": true
+    },
+    {
+      "name": "rest_polling_feed",
+      "kind": "data_feed",
+      "summary": "Generic REST polling quote feed",
+      "defaults": {
+        "poll_interval": 1.0,
+        "max_retries": 3,
+        "backoff_seconds": 0.5,
+        "request_timeout": 5.0
+      },
+      "params": [
+        {
+          "name": "symbol",
+          "type": "str",
+          "required": true
+        },
+        {
+          "name": "url",
+          "type": "str",
+          "required": true
+        },
+        {
+          "name": "poll_interval",
+          "type": "float"
+        },
+        {
+          "name": "max_ticks",
+          "type": "int"
+        },
+        {
+          "name": "max_retries",
+          "type": "int"
+        },
+        {
+          "name": "backoff_seconds",
+          "type": "float"
+        },
+        {
+          "name": "request_timeout",
+          "type": "any"
+        },
+        {
+          "name": "connect_timeout",
+          "type": "float"
+        },
+        {
+          "name": "read_timeout",
+          "type": "float"
+        }
+      ],
+      "strict_params": true
+    },
+    {
+      "name": "websocket_json_feed",
+      "kind": "data_feed",
+      "summary": "Generic WebSocket JSON feed",
+      "defaults": {
+        "max_reconnects": 3,
+        "backoff_seconds": 0.5
+      },
+      "params": [
+        {
+          "name": "symbol",
+          "type": "str",
+          "required": true
+        },
+        {
+          "name": "url",
+          "type": "str",
+          "required": true
+        },
+        {
+          "name": "max_ticks",
+          "type": "int"
+        },
+        {
+          "name": "max_reconnects",
+          "type": "int"
+        },
+        {
+          "name": "backoff_seconds",
+          "type": "float"
+        },
+        {
+          "name": "heartbeat_interval",
+          "type": "float"
+        }
+      ],
+      "strict_params": true
+    },
+    {
+      "name": "adata_live_feed",
+      "kind": "data_feed",
+      "summary": "AData live polling feed",
+      "defaults": {
+        "poll_interval": 1.0
+      },
+      "params": [
+        {
+          "name": "symbol",
+          "type": "str",
+          "required": true
+        },
+        {
+          "name": "poll_interval",
+          "type": "float"
+        },
+        {
+          "name": "max_ticks",
+          "type": "int"
+        }
+      ],
+      "strict_params": true
+    },
+    {
+      "name": "eastmoney_marketdata",
+      "kind": "data_feed",
+      "summary": "Eastmoney market data plugin with configurable transport",
+      "defaults": {
+        "transport": "sse",
+        "max_reconnects": 3,
+        "backoff_seconds": 0.5,
+        "connect_timeout": 5.0,
+        "read_timeout": 30.0,
+        "price_scale": 100.0,
+        "snapshot_fallback": true,
+        "source_failure_threshold": 2,
+        "source_cooldown_seconds": 2.0,
+        "emit_source_status": true
+      },
+      "capabilities": {
+        "transports": [
+          "sse",
+          "api",
+          "websocket"
+        ]
+      },
+      "params": [
+        {
+          "name": "symbol",
+          "type": "str",
+          "required": true
+        },
+        {
+          "name": "transport",
+          "type": "str"
+        },
+        {
+          "name": "sources",
+          "type": "list[object]"
+        },
+        {
+          "name": "field_map",
+          "type": "object"
+        },
+        {
+          "name": "url",
+          "type": "str"
+        },
+        {
+          "name": "headers",
+          "type": "object"
+        },
+        {
+          "name": "query",
+          "type": "object"
+        },
+        {
+          "name": "symbol_param",
+          "type": "str"
+        },
+        {
+          "name": "symbol_template",
+          "type": "str"
+        },
+        {
+          "name": "symbol_transform",
+          "type": "str"
+        },
+        {
+          "name": "encoding",
+          "type": "str"
+        },
+        {
+          "name": "response_mode",
+          "type": "str"
+        },
+        {
+          "name": "on_demand_only",
+          "type": "bool"
+        },
+        {
+          "name": "heartbeat_interval",
+          "type": "float"
+        },
+        {
+          "name": "sse_url",
+          "type": "str"
+        },
+        {
+          "name": "sse_base_url",
+          "type": "str"
+        },
+        {
+          "name": "sse_headers",
+          "type": "object"
+        },
+        {
+          "name": "snapshot_url",
+          "type": "str"
+        },
+        {
+          "name": "snapshot_fields",
+          "type": "str"
+        },
+        {
+          "name": "snapshot_ut",
+          "type": "str"
+        },
+        {
+          "name": "snapshot_headers",
+          "type": "object"
+        },
+        {
+          "name": "snapshot_params",
+          "type": "object"
+        },
+        {
+          "name": "snapshot_field_map",
+          "type": "object"
+        },
+        {
+          "name": "snapshot_fallback",
+          "type": "bool"
+        },
+        {
+          "name": "price_scale",
+          "type": "float"
+        },
+        {
+          "name": "secid",
+          "type": "str"
+        },
+        {
+          "name": "token",
+          "type": "str"
+        },
+        {
+          "name": "cname",
+          "type": "str"
+        },
+        {
+          "name": "seq",
+          "type": "int"
+        },
+        {
+          "name": "noop",
+          "type": "int"
+        },
+        {
+          "name": "max_ticks",
+          "type": "int"
+        },
+        {
+          "name": "max_reconnects",
+          "type": "int"
+        },
+        {
+          "name": "backoff_seconds",
+          "type": "float"
+        },
+        {
+          "name": "connect_timeout",
+          "type": "float"
+        },
+        {
+          "name": "read_timeout",
+          "type": "float"
+        },
+        {
+          "name": "reconnect_every_ticks",
+          "type": "int"
+        },
+        {
+          "name": "heartbeat_timeout",
+          "type": "float"
+        },
+        {
+          "name": "source_failure_threshold",
+          "type": "int"
+        },
+        {
+          "name": "source_cooldown_seconds",
+          "type": "float"
+        },
+        {
+          "name": "emit_source_status",
+          "type": "bool"
+        }
+      ],
+      "strict_params": true
+    },
+    {
+      "name": "sina_marketdata",
+      "kind": "data_feed",
+      "summary": "Sina quote API plugin",
+      "defaults": {
+        "transport": "api",
+        "url": "https://hq.sinajs.cn/list={symbol}",
+        "response_mode": "sina_hq",
+        "symbol_transform": "cn_prefix",
+        "max_reconnects": 3,
+        "backoff_seconds": 0.5,
+        "connect_timeout": 5.0,
+        "read_timeout": 30.0,
+        "price_scale": 100.0,
+        "source_failure_threshold": 2,
+        "source_cooldown_seconds": 2.0,
+        "emit_source_status": true
+      },
+      "capabilities": {
+        "transports": [
+          "api"
+        ]
+      },
+      "params": [
+        {
+          "name": "symbol",
+          "type": "str",
+          "required": true
+        },
+        {
+          "name": "transport",
+          "type": "str"
+        },
+        {
+          "name": "url",
+          "type": "str"
+        },
+        {
+          "name": "response_mode",
+          "type": "str"
+        },
+        {
+          "name": "symbol_transform",
+          "type": "str"
+        },
+        {
+          "name": "field_map",
+          "type": "object"
+        },
+        {
+          "name": "headers",
+          "type": "object"
+        },
+        {
+          "name": "query",
+          "type": "object"
+        },
+        {
+          "name": "encoding",
+          "type": "str"
+        },
+        {
+          "name": "symbol_param",
+          "type": "str"
+        },
+        {
+          "name": "symbol_template",
+          "type": "str"
+        },
+        {
+          "name": "on_demand_only",
+          "type": "bool"
+        },
+        {
+          "name": "max_ticks",
+          "type": "int"
+        },
+        {
+          "name": "max_reconnects",
+          "type": "int"
+        },
+        {
+          "name": "backoff_seconds",
+          "type": "float"
+        },
+        {
+          "name": "connect_timeout",
+          "type": "float"
+        },
+        {
+          "name": "read_timeout",
+          "type": "float"
+        },
+        {
+          "name": "price_scale",
+          "type": "float"
+        },
+        {
+          "name": "source_failure_threshold",
+          "type": "int"
+        },
+        {
+          "name": "source_cooldown_seconds",
+          "type": "float"
+        },
+        {
+          "name": "emit_source_status",
+          "type": "bool"
+        }
+      ],
+      "strict_params": true
+    },
+    {
+      "name": "moving_average",
+      "kind": "strategy",
+      "strict_params": true,
+      "summary": "Dual moving-average crossover strategy",
+      "defaults": {
+        "short_window": 5,
+        "long_window": 20,
+        "strategy_id": "mac"
+      },
+      "params": [
+        {
+          "name": "symbol",
+          "type": "str",
+          "required": true
+        },
+        {
+          "name": "short_window",
+          "type": "int"
+        },
+        {
+          "name": "long_window",
+          "type": "int"
+        },
+        {
+          "name": "strategy_id",
+          "type": "str"
+        },
+        {
+          "name": "debug_signal",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "uptrend",
+      "kind": "strategy",
+      "strict_params": true,
+      "summary": "Uptrend breakout strategy",
+      "defaults": {
+        "window": 20,
+        "breakout_factor": 1.5,
+        "strategy_id": "uptrend"
+      },
+      "params": [
+        {
+          "name": "symbol",
+          "type": "str",
+          "required": true
+        },
+        {
+          "name": "window",
+          "type": "int"
+        },
+        {
+          "name": "breakout_factor",
+          "type": "float"
+        },
+        {
+          "name": "strategy_id",
+          "type": "str"
+        },
+        {
+          "name": "debug_signal",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "naive_portfolio",
+      "kind": "portfolio",
+      "summary": "Fixed lot portfolio",
+      "defaults": {
+        "lot_size": 100,
+        "initial_cash": 100000.0
+      },
+      "params": [
+        {
+          "name": "lot_size",
+          "type": "int"
+        },
+        {
+          "name": "initial_cash",
+          "type": "float"
+        }
+      ],
+      "strict_params": true
+    },
+    {
+      "name": "immediate_execution",
+      "kind": "execution",
+      "summary": "Immediate execution handler",
+      "defaults": {
+        "slippage": 0.0,
+        "commission": 0.0,
+        "fill_timing": "current_close"
+      },
+      "params": [
+        {
+          "name": "slippage",
+          "type": "float"
+        },
+        {
+          "name": "commission",
+          "type": "float"
+        },
+        {
+          "name": "partial_fill_ratio",
+          "type": "float"
+        },
+        {
+          "name": "max_staleness",
+          "type": "float"
+        },
+        {
+          "name": "fill_timing",
+          "type": "str"
+        }
+      ],
+      "strict_params": true
+    },
+    {
+      "name": "max_position_risk",
+      "kind": "risk",
+      "summary": "Max absolute position limit",
+      "params": [
+        {
+          "name": "limit",
+          "type": "int",
+          "required": true
+        }
+      ],
+      "strict_params": true
+    },
+    {
+      "name": "buying_power_risk",
+      "kind": "risk",
+      "summary": "Buying power risk control",
+      "defaults": {
+        "initial_cash": 100000.0,
+        "max_leverage": 1.0,
+        "reserve_cash": 0.0
+      },
+      "params": [
+        {
+          "name": "initial_cash",
+          "type": "float"
+        },
+        {
+          "name": "max_leverage",
+          "type": "float"
+        },
+        {
+          "name": "reserve_cash",
+          "type": "float"
+        }
+      ],
+      "strict_params": true
+    },
+    {
+      "name": "concentration_risk",
+      "kind": "risk",
+      "summary": "Single-symbol concentration limit",
+      "defaults": {
+        "initial_cash": 100000.0,
+        "max_fraction": 0.5
+      },
+      "params": [
+        {
+          "name": "initial_cash",
+          "type": "float"
+        },
+        {
+          "name": "max_fraction",
+          "type": "float"
+        }
+      ],
+      "strict_params": true
+    },
+    {
+      "name": "price_band_risk",
+      "kind": "risk",
+      "summary": "Reject overly deviated orders",
+      "defaults": {
+        "band_pct": 0.05
+      },
+      "params": [
+        {
+          "name": "band_pct",
+          "type": "float"
+        }
+      ],
+      "strict_params": true
+    },
+    {
+      "name": "equity_reporter",
+      "kind": "reporter",
+      "summary": "Equity/cash reporter",
+      "defaults": {
+        "initial_cash": 100000.0
+      },
+      "params": [
+        {
+          "name": "initial_cash",
+          "type": "float"
+        }
+      ],
+      "strict_params": true
+    },
+    {
+      "name": "detailed_reporter",
+      "kind": "reporter",
+      "summary": "Detailed metrics and trade stats",
+      "defaults": {
+        "initial_cash": 100000.0,
+        "track_equity_curve": true
+      },
+      "params": [
+        {
+          "name": "initial_cash",
+          "type": "float"
+        },
+        {
+          "name": "track_equity_curve",
+          "type": "bool"
+        }
+      ],
+      "strict_params": true
+    },
+    {
+      "name": "tradelog_reporter",
+      "kind": "reporter",
+      "summary": "Persist fills to JSONL/SQLite",
+      "params": [
+        {
+          "name": "jsonl_path",
+          "type": "str"
+        },
+        {
+          "name": "sqlite_path",
+          "type": "str"
+        }
+      ],
+      "strict_params": true
+    }
+  ]
+}

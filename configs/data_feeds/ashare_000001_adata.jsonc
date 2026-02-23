@@ -1,0 +1,8 @@
+{
+  // AData live polling feed
+  "plugin": "adata_live_feed",
+  "params": {
+    "symbol": "000001",
+    "poll_interval": 1.0
+  }
+}

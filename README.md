@@ -51,28 +51,24 @@ pip install -e .[app]
 - `configs/reporters/*.jsonc`
 - `configs/profiles/*.jsonc`（组合入口，可直接用于 `--run-config`）
 
-`pybt.configuration.loader` 当前支持以下组件类型：
+装配规则（新）：
 
-- `data_feed.type`: `local_csv` / `local_file` / `inmemory` / `rest` / `websocket` / `adata` / `eastmoney_sse` / `market_feed` / `eastmoney_sse_ext`（兼容别名）
-- `strategies[].type`: `moving_average` / `uptrend` / `plugin`
-- `portfolio.type`: `naive`
-- `execution.type`: `immediate`
-- `risk[].type`: `max_position` / `buying_power` / `concentration` / `price_band`
-- `reporters[].type`: `equity` / `detailed` / `tradelog`
+- 所有核心节点统一使用 `plugin + params` 形式。
+- 插件元数据来自 `plugins/plugin.jsonc`（可通过 `plugin_registry` 指定）。
+- 每个插件只声明一个 `kind`（`data_feed` / `strategy` / `portfolio` / `execution` / `risk` / `reporter`）。
+- 可选 `strict_params`：开启后会拒绝未声明参数（减少拼写错误导致的静默配置问题）。
 
 若启用了 server，可通过 `GET /definitions`（需 `X-API-Key`）获取完整组件定义与参数元数据，便于 UI 或 Bot 做自动提示。
 
-`market_feed` 默认推荐**简化配置**：只写 `source`（如 `sse`/`websocket`）和可选 `url`；
-需要精细控制时再使用 `sources` 插件链（`sse` + `snapshot_api` + `websocket` + 自定义 `plugin`）。`eastmoney_sse_ext` 作为兼容别名保留。
-
-最简实时行情示例：
+最简实时行情示例（Eastmoney 插件）：
 
 ```json
 {
-  "type": "market_feed",
-  "symbol": "600000",
-  "source": "sse",
-  "snapshot_fallback": true
+  "plugin": "eastmoney_marketdata",
+  "params": {
+    "symbol": "600000",
+    "transport": "sse"
+  }
 }
 ```
 
@@ -81,50 +77,60 @@ pip install -e .[app]
 ```json
 {
   "name": "ashare-live-prod",
+  "plugin_registry": "plugins/plugin.jsonc",
   "data_feed": {
-    "type": "local_csv",
-    "path": "./data/AAA/Bar.csv",
-    "symbol": "AAA"
+    "plugin": "local_csv_feed",
+    "params": {
+      "path": "./data/AAA/Bar.csv",
+      "symbol": "AAA"
+    }
   },
   "strategies": [
     {
-      "type": "moving_average",
-      "symbol": "AAA",
-      "short_window": 5,
-      "long_window": 20
+      "plugin": "moving_average",
+      "params": {
+        "symbol": "AAA",
+        "short_window": 5,
+        "long_window": 20
+      }
     }
   ],
   "portfolio": {
-    "type": "naive",
-    "lot_size": 100,
-    "initial_cash": 100000
+    "plugin": "naive_portfolio",
+    "params": {
+      "lot_size": 100,
+      "initial_cash": 100000
+    }
   },
   "execution": {
-    "type": "immediate",
-    "slippage": 0.0,
-    "commission": 0.0,
-    "fill_timing": "next_open"
+    "plugin": "immediate_execution",
+    "params": {
+      "slippage": 0.0,
+      "commission": 0.0,
+      "fill_timing": "next_open"
+    }
   },
   "risk": [
     {
-      "type": "max_position",
-      "limit": 500
+      "plugin": "max_position_risk",
+      "params": {
+        "limit": 500
+      }
     }
   ],
   "reporters": [
     {
-      "type": "equity"
+      "plugin": "equity_reporter"
     }
   ]
 }
 ```
 
-插件策略示例：
+自定义策略插件示例：
 
 ```json
 {
-  "type": "plugin",
-  "class_path": "strategies.my_live_strategy.MyLiveStrategy",
+  "plugin": "my_live_strategy",
   "params": {
     "symbol": "AAA",
     "strategy_id": "my-live"
@@ -148,6 +154,31 @@ CLI
 python -m pybt --config ./config.json --log-level INFO --json-logs
 ```
 
+先做自检（推荐）：
+
+```bash
+python -m pybt --config ./config.json --self-check
+```
+
+快速体验（可直接复制）：
+
+```bash
+# Eastmoney SSE
+python -m pybt --config ./examples/profiles/eastmoney_sse_quickstart.jsonc --self-check
+python -m pybt --config ./examples/profiles/eastmoney_sse_quickstart.jsonc --log-level INFO
+
+# Sina API
+python -m pybt --config ./examples/profiles/sina_api_quickstart.jsonc --self-check
+python -m pybt --config ./examples/profiles/sina_api_quickstart.jsonc --log-level INFO
+```
+
+或使用一键自检脚本：
+
+```bash
+bash scripts/check_config.sh
+bash scripts/check_config.sh ./examples/profiles/sina_api_quickstart.jsonc
+```
+
 应用层入口（可选）
 ----------------
 HTTP API（FastAPI）：
@@ -156,6 +187,15 @@ pip install -e .[server]
 export PYBT_API_KEY=your_key
 pybt-server
 ```
+
+平台调试/观测接口（需 `X-API-Key`）：
+- `GET /runs/{run_id}/events`：按序查询事件。
+- `GET /runs/{run_id}/signals?include_debug=true`：查询策略信号与调试事件（支持 `strategy_id`、`symbol`、`since_seq`、`limit` 过滤）。
+- `GET /runs/{run_id}/compare/{other_run_id}`：比较两个运行，返回 `event_count_delta` 与数值类 `summary_delta`。
+- `GET /runs/{run_id}/stream`（WebSocket）：实时推送事件；数据源异常/恢复会以 `DataSourceStatusEvent` 进入事件流。
+- `GET /plugins`：列出插件及启用状态（支持 `kind`、`enabled` 过滤）。
+- `POST /plugins/{name}/load`：启用插件。
+- `POST /plugins/{name}/unload`：停用插件。
 
 错误响应约定：
 - 所有错误响应返回 `{"ok": false, "error": {...}}`。
@@ -167,6 +207,7 @@ pybt-server
 - `PYBT_SERVER_PORT`（默认 `8765`）
 - `PYBT_BASE_DIR`（默认 `~/.pybt`）
 - `PYBT_MAX_CONCURRENT_RUNS`（默认 `4`）
+- `PYBT_PLUGIN_REGISTRY`（可选，默认自动发现 `plugins/plugin.jsonc`）
 
 Telegram Bot：
 ```bash
@@ -179,17 +220,36 @@ pybt-bot
 ```
 
 Telegram 命令化配置（数据源/策略）：
-- `/definitions [data_feed|strategy]`：查看支持的组件类型。
+- `/definitions [data_feed|strategy|portfolio|execution|risk|reporter]`：查看支持的组件类型。
 - `/draft_new [symbol]`：创建/重置当前草稿配置（按用户隔离）。
-- `/set_feed <type> key=value...` 或 `/set_feed {"type":"...","...":...}`：设置数据源。
-- `/add_strategy <type> key=value...`：新增策略。
-- `/set_strategy <index> <type> key=value...`：替换某条策略。
+- `/set_feed <plugin> key=value...` 或 `/set_feed {"plugin":"...","params":{...}}`：设置数据源。
+- `/add_strategy <plugin> key=value...`：新增策略。
+- `/set_strategy <index> <plugin> key=value...`：替换某条策略。
 - `/del_strategy <index>`：删除某条策略。
 - `/list_strategy`：列出草稿里的策略及 ON/OFF 状态。
 - `/strategy on/off <index|strategy_id|all>`：启用/停用策略。
 - `/draft_show`：查看当前草稿 JSON。
 - `/save_draft <name.json> [force]`：保存到 server 配置中心。
 - `/run_draft`：直接以内联配置启动运行（无需先保存）。
+- `/runs [state=<all|running|starting|completed|failed|stopped>|<state>] [limit=20]`：查看运行列表（支持状态过滤）。
+- `Runs` 按钮页支持 `All/Running/Failed/Completed/Stopped/Refresh` 快捷过滤。
+- `/program_start <config_name|draft>`：启动程序（配置名或当前 draft）。
+- `/program_stop <run_id>`：停止程序。
+- `/plugins [kind=<kind>|<kind>] [enabled=true|false|on|off]`：查看插件状态。
+- `/plugin_load <plugin_name>`：加载（启用）插件。
+- `/plugin_unload <plugin_name>`：卸载（停用）插件。
+- `/program_help`：程序/插件相关命令帮助（同 `/plugin_help`）。
+- `/plugin_help`：查看上述命令用法。
+- `/run_compare <left_run_id> <right_run_id>`：比较两次运行（事件计数差异 + summary 数值差异）。
+- `/run_signals <run_id> [strategy_id=...] [symbol=...] [since_seq=0] [limit=20] [include_debug=true|false]`：查看信号与策略调试事件。
+
+策略调试参数（`strategies[].params`）：
+- `moving_average` / `uptrend` 支持 `debug_signal=true`，会额外发出 `StrategyDebugEvent`，用于排查“为什么这根K线没有出信号”。
+
+行情源稳定性参数（`data_feed.params`）：
+- `source_failure_threshold`：单个 source 连续失败多少次后进入冷却（默认 `2`）。
+- `source_cooldown_seconds`：冷却秒数（默认 `2.0`）。
+- `emit_source_status`：是否发出数据源状态事件（默认 `true`）。
 
 一键启动（生产链路）
 ------------------
@@ -243,8 +303,17 @@ bash scripts/start_realtime_system.sh --check
 
 生产配置文件（推荐 profile JSONC）：
 - `configs/profiles/ashare_live_prod.jsonc`
-- `configs/profiles/market_feed_prod.jsonc`
 - `configs/profiles/eastmoney_sse_prod.jsonc`
+- `configs/profiles/sina_hq_api_live.jsonc`
+- `configs/` 目录仅保留生产级配置。
+
+快速体验配置：
+- `examples/profiles/eastmoney_sse_quickstart.jsonc`
+- `examples/profiles/sina_api_quickstart.jsonc`
+
+连通性自检配置（一次拉取后自动退出）：
+- `examples/profiles/eastmoney_sse_live_verify_once.jsonc`
+- `examples/profiles/sina_hq_api_live_verify_once.jsonc`
 
 项目结构
 --------
@@ -263,6 +332,8 @@ bash scripts/start_realtime_system.sh --check
 架构文档
 --------
 - `docs/architecture_and_functionality.md`: 项目系统架构与功能分析。
+- `docs/telegram_bot_usage.md`: Telegram Bot 运行编排与插件管理使用说明。
+- `docs/telegram_bot_quickref.md`: Telegram Bot 一页速查（值守/排障常用命令）。
 - `docs/diagrams/pybt-data-flow.drawio`: 可编辑的数据流程图（draw.io/diagrams.net）。
 
 开发与验证
@@ -276,7 +347,7 @@ mypy pybt
 注意事项
 --------
 - `execution.fill_timing="current_close"` 默认值更偏向教学/回放；若追求更现实的时序，建议使用 `next_open` 以降低未来函数偏差。
-- `ADataLiveFeed` 依赖 `adata`，未安装时请避免使用 `data_feed.type="adata"`。
-- `EastmoneySSEFeed` 基于网页 SSE 推送通道，可能受网站风控策略、连接节流和参数变化影响，生产上建议准备备用行情源和告警。
-- 如需降低连接抖动和切换供应商，可使用 `data_feed.type="market_feed"`，通过 `sources` 插件链（`sse`/`snapshot_api`/`websocket`/`plugin`）及其参数在配置里调整行为。
+- `adata_live_feed` 插件依赖 `adata`，未安装时请避免启用该插件。
+- `eastmoney_marketdata` 插件基于网页 SSE/API 通道，可能受网站风控策略、连接节流和参数变化影响，生产上建议准备备用行情源和告警。
+- 切换供应商时，建议只替换 `data_feed.plugin`（如 `eastmoney_marketdata` / `sina_marketdata`）并复用相同策略配置。
 - 内置策略与组合/风控实现偏简化，生产环境建议扩展交易成本、容量约束与更严格的数据校验。
