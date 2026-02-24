@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from uuid import uuid4
 from typing import Any, Mapping, Optional, cast
 
@@ -282,7 +283,7 @@ def create_app(settings: ServerSettings) -> FastAPI:
         req: ConfigValidateRequest, request: Request
     ) -> ConfigValidateResponse:
         try:
-            load_engine_from_dict(req.config)
+            load_engine_from_dict(req.config, config_base_dir=settings.configs_dir)
             return ConfigValidateResponse(ok=True)
         except Exception as exc:
             return ConfigValidateResponse(
@@ -373,14 +374,20 @@ def create_app(settings: ServerSettings) -> FastAPI:
                     details={"name": req.config_name},
                 )
             config_name = req.config_name
+            config_base_dir: Optional[Path] = settings.configs_dir
         else:
             assert req.config is not None
             cfg = req.config
             # When the client provides raw config, it should have been saved already.
             config_name = "(inline)"
+            config_base_dir = None
 
         try:
-            rec = runs.start(config_name=config_name, config=cfg)
+            rec = runs.start(
+                config_name=config_name,
+                config=cfg,
+                config_base_dir=config_base_dir,
+            )
         except RuntimeError as exc:
             raise _http_error(
                 request,

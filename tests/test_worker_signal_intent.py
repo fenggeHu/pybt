@@ -27,7 +27,7 @@ class _FakeEngine:
 
 def test_worker_emits_notification_intent_event(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
-        worker_module, "load_engine_from_dict", lambda _cfg: _FakeEngine()
+        worker_module, "load_engine_from_dict", lambda _cfg, **_kwargs: _FakeEngine()
     )
 
     run_dir = tmp_path / "run"

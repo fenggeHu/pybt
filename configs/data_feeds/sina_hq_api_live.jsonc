@@ -13,6 +13,8 @@
       "amount": "9"
     },
     "headers": {
+      // Merge user-local sensitive headers (Authorization, Cookie, etc.).
+      "$ref": "~/.pybt/config.jsonc#secrets.sina.headers",
       "User-Agent": "Mozilla/5.0",
       "Referer": "https://finance.sina.com.cn/"
     },

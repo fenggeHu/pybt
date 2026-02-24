@@ -7,6 +7,7 @@ import uvicorn
 
 from apps.server.app import create_app
 from apps.server.settings import ServerSettings
+from pybt.configuration import ensure_user_config
 
 
 def main() -> None:
@@ -19,6 +20,10 @@ def main() -> None:
     max_runs = int(os.environ.get("PYBT_MAX_CONCURRENT_RUNS", "4"))
     plugin_registry_raw = os.environ.get("PYBT_PLUGIN_REGISTRY", "").strip()
     plugin_registry = Path(plugin_registry_raw) if plugin_registry_raw else None
+    try:
+        ensure_user_config()
+    except Exception:
+        pass
 
     settings = ServerSettings(
         base_dir=base_dir,

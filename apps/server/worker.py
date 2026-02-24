@@ -38,11 +38,16 @@ def _serialize_event(event: object) -> tuple[str, str, dict[str, Any]]:
 
 
 def run_worker(
-    run_id: str, config: Mapping[str, Any], run_dir_str: str, event_q: Any
+    run_id: str,
+    config: Mapping[str, Any],
+    run_dir_str: str,
+    event_q: Any,
+    config_base_dir: str | None = None,
 ) -> None:
     run_dir = Path(run_dir_str)
     try:
-        engine = load_engine_from_dict(config)
+        base_dir = Path(config_base_dir).resolve() if config_base_dir else None
+        engine = load_engine_from_dict(config, config_base_dir=base_dir)
 
         def on_fill(ev: FillEvent) -> None:
             et, ts, data = _serialize_event(ev)

@@ -16,6 +16,7 @@ from typing import Any, Mapping, Optional
 from urllib.parse import quote, urlencode
 
 import httpx
+from pybt.configuration import ensure_user_config
 from pybt.live.notify import NotificationOutbox, OutboxNotifierWorker
 
 # Telegram is an optional dependency. We import it at runtime in main() so that
@@ -2804,6 +2805,10 @@ async def _on_handler_error(update: Any, context: Any) -> None:
 
 
 def main() -> None:
+    try:
+        ensure_user_config()
+    except Exception:
+        pass
     try:
         import importlib
 

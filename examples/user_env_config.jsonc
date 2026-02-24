@@ -1,0 +1,13 @@
+{
+  // Copy this file to ~/.pybt/config.jsonc and fill your real secrets.
+  "secrets": {
+    "eastmoney": {
+      "token": "",
+      "headers": {},
+      "snapshot_headers": {}
+    },
+    "sina": {
+      "headers": {}
+    }
+  }
+}

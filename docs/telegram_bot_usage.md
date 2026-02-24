@@ -1,6 +1,6 @@
 # PyBT Telegram Bot 使用文档
 
-本文档面向运维和策略开发同学，描述如何通过 Telegram Bot 完成运行编排、插件管理、草稿配置和调试排障。
+本文档面向运维和策略开发同学，描述如何通过 Telegram Bot 完成运行编排、插件管理、草稿配置和调试排障。首次上手建议先看 `docs/telegram_bot_minimal_runbook.md`。
 
 ## 1. 启动准备
 
@@ -33,6 +33,48 @@ export PYBT_API_KEY=your_key
 export PYBT_SERVER_URL=http://127.0.0.1:8765
 
 pybt-bot
+```
+
+### 1.3 用户敏感配置（推荐）
+
+- 默认文件：`~/.pybt/config.jsonc`
+- `pybt` / `pybt-server` / `pybt-bot` 启动时会自动创建该文件模板。
+- 用于存放 token/cookie/header 等敏感信息，避免写入仓库配置。
+
+可先复制模板并填写：
+
+```bash
+mkdir -p ~/.pybt
+cp examples/user_env_config.jsonc ~/.pybt/config.jsonc
+```
+
+说明：
+
+- `configs/data_feeds/sina_hq_api_live.jsonc` 默认引用 `~/.pybt/config.jsonc#secrets.sina.headers`
+- `configs/data_feeds/eastmoney_600000_sse.jsonc` 默认引用 `~/.pybt/config.jsonc#secrets.eastmoney.{token,headers,snapshot_headers}`
+
+建议至少保留以下结构（按需填写）：
+
+```jsonc
+{
+  "secrets": {
+    "eastmoney": {
+      "token": "",
+      "headers": {},
+      "snapshot_headers": {}
+    },
+    "sina": {
+      "headers": {}
+    }
+  }
+}
+```
+
+可用以下命令快速校验引用是否可解析：
+
+```bash
+python -m pybt --config ./configs/profiles/sina_hq_api_live.jsonc --self-check
+python -m pybt --config ./configs/profiles/eastmoney_sse_prod.jsonc --self-check
 ```
 
 ## 2. 登录与访问控制

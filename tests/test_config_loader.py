@@ -140,6 +140,41 @@ def test_load_engine_from_json_supports_jsonc_refs(tmp_path: Path) -> None:
     engine.run()
 
 
+def test_load_engine_from_dict_supports_refs_with_base_dir(tmp_path: Path) -> None:
+    csv_path = _write_csv(tmp_path)
+    parts = tmp_path / "parts"
+    parts.mkdir()
+    (parts / "data_feed.jsonc").write_text(
+        f"""
+        {{
+          "plugin": "local_csv_feed",
+          "params": {{"path": "{csv_path}", "symbol": "AAA"}}
+        }}
+        """,
+        encoding="utf-8",
+    )
+    cfg = {
+        "name": "dict-ref-demo",
+        "plugin_registry": str(_plugin_registry_path()),
+        "data_feed": {"$ref": "./parts/data_feed.jsonc"},
+        "strategies": [
+            {
+                "plugin": "moving_average",
+                "params": {"symbol": "AAA", "short_window": 1, "long_window": 2},
+            }
+        ],
+        "portfolio": {
+            "plugin": "naive_portfolio",
+            "params": {"initial_cash": 10000},
+        },
+        "execution": {"plugin": "immediate_execution"},
+        "reporters": [{"plugin": "equity_reporter"}],
+    }
+
+    engine = load_engine_from_dict(cfg, config_base_dir=tmp_path)
+    engine.run()
+
+
 def test_load_engine_from_json_requires_keys(tmp_path: Path) -> None:
     cfg_path = tmp_path / "config.json"
     cfg_path.write_text("{}", encoding="utf-8")

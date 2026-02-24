@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from pybt import configure_logging
-from pybt.configuration import load_config_dict, load_engine_from_dict
+from pybt.configuration import ensure_user_config, load_config_dict, load_engine_from_dict
 
 
 try:
@@ -52,6 +52,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         parser.error("--validate and --self-check cannot be used together")
 
     configure_logging(level=args.log_level, json_format=args.json_logs)
+    try:
+        ensure_user_config()
+    except Exception as exc:
+        print(f"[WARN] Failed to initialize ~/.pybt/config.jsonc: {exc}", file=sys.stderr)
     try:
         cfg_path = args.config.resolve()
         raw_cfg = load_config_dict(cfg_path)

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence, Union
 from uuid import uuid4
 
-from .config_file import load_config_dict
+from .config_file import load_config_dict, resolve_config_refs
 from .plugins import PluginLoader, PluginRegistry, find_default_registry_path
 from pybt.core.engine import BacktestEngine, EngineConfig
 
@@ -102,23 +102,31 @@ def load_engine_from_dict(
 ) -> BacktestEngine:
     """Load BacktestEngine from an in-memory config dict."""
 
+    resolved_raw = resolve_config_refs(raw, base_dir=config_base_dir)
+    if not isinstance(resolved_raw, Mapping):
+        raise ValueError("Config JSON must be an object")
+
     plugin_loader = _create_loader(
-        raw,
+        resolved_raw,
         config_base_dir=config_base_dir,
         plugin_registry_path=plugin_registry_path,
     )
-    run_id = str(raw.get("run_id", uuid4().hex))
+    run_id = str(resolved_raw.get("run_id", uuid4().hex))
 
-    data_feed_cfg = _as_object(_require(raw, "data_feed"), field_name="data_feed")
+    data_feed_cfg = _as_object(
+        _require(resolved_raw, "data_feed"), field_name="data_feed"
+    )
     data_feed = plugin_loader.create_component(
         slot="data_feed",
         kind="data_feed",
         component=data_feed_cfg,
         run_id=run_id,
-        engine_config=raw,
+        engine_config=resolved_raw,
     )
 
-    strategies_cfg = _as_object_array(_require(raw, "strategies"), field_name="strategies")
+    strategies_cfg = _as_object_array(
+        _require(resolved_raw, "strategies"), field_name="strategies"
+    )
     strategies = []
     for idx, item in enumerate(strategies_cfg):
         if not _is_enabled(item.get("enabled", True)):
@@ -129,30 +137,34 @@ def load_engine_from_dict(
                 kind="strategy",
                 component=item,
                 run_id=run_id,
-                engine_config=raw,
+                engine_config=resolved_raw,
             )
         )
 
-    portfolio_cfg = _as_object(_require(raw, "portfolio"), field_name="portfolio")
+    portfolio_cfg = _as_object(
+        _require(resolved_raw, "portfolio"), field_name="portfolio"
+    )
     portfolio = plugin_loader.create_component(
         slot="portfolio",
         kind="portfolio",
         component=portfolio_cfg,
         run_id=run_id,
-        engine_config=raw,
+        engine_config=resolved_raw,
     )
 
-    execution_cfg = _as_object(_require(raw, "execution"), field_name="execution")
+    execution_cfg = _as_object(
+        _require(resolved_raw, "execution"), field_name="execution"
+    )
     execution = plugin_loader.create_component(
         slot="execution",
         kind="execution",
         component=execution_cfg,
         run_id=run_id,
-        engine_config=raw,
+        engine_config=resolved_raw,
     )
 
     risk: list[Any] = []
-    risk_cfg = raw.get("risk")
+    risk_cfg = resolved_raw.get("risk")
     if risk_cfg is not None:
         risk_items = _as_object_array(risk_cfg, field_name="risk")
         for idx, item in enumerate(risk_items):
@@ -164,12 +176,12 @@ def load_engine_from_dict(
                     kind="risk",
                     component=item,
                     run_id=run_id,
-                    engine_config=raw,
+                    engine_config=resolved_raw,
                 )
             )
 
     reporters: list[Any] = []
-    reporters_cfg = raw.get("reporters")
+    reporters_cfg = resolved_raw.get("reporters")
     if reporters_cfg is not None:
         reporter_items = _as_object_array(reporters_cfg, field_name="reporters")
         for idx, item in enumerate(reporter_items):
@@ -181,14 +193,14 @@ def load_engine_from_dict(
                     kind="reporter",
                     component=item,
                     run_id=run_id,
-                    engine_config=raw,
+                    engine_config=resolved_raw,
                 )
             )
 
     engine_cfg = EngineConfig(
-        name=str(raw.get("name", "backtest")),
-        start=_parse_dt(raw.get("start")),
-        end=_parse_dt(raw.get("end")),
+        name=str(resolved_raw.get("name", "backtest")),
+        start=_parse_dt(resolved_raw.get("start")),
+        end=_parse_dt(resolved_raw.get("end")),
     )
 
     return BacktestEngine(

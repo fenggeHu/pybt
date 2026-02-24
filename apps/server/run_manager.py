@@ -111,7 +111,13 @@ class RunManager:
     def _running_count(self) -> int:
         return sum(1 for r in self._runs.values() if r.state in {"starting", "running"})
 
-    def start(self, *, config_name: str, config: Mapping[str, Any]) -> RunRecord:
+    def start(
+        self,
+        *,
+        config_name: str,
+        config: Mapping[str, Any],
+        config_base_dir: Path | None = None,
+    ) -> RunRecord:
         with self._lock:
             if self._running_count() >= self.max_concurrent_runs:
                 raise RuntimeError("Too many concurrent runs")
@@ -127,7 +133,13 @@ class RunManager:
             event_q: mp.Queue = ctx.Queue(maxsize=5000)
             proc = ctx.Process(
                 target=run_worker,
-                args=(run_id, config, str(run_dir), event_q),
+                args=(
+                    run_id,
+                    config,
+                    str(run_dir),
+                    event_q,
+                    str(config_base_dir.resolve()) if config_base_dir else None,
+                ),
                 name=f"pybt-run-{run_id}",
                 daemon=True,
             )

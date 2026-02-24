@@ -1,10 +1,14 @@
 # PyBT Telegram Bot Quick Reference
 
-一页速查，适合日常值守与快速操作。详细说明见 `docs/telegram_bot_usage.md`。
+一页速查，适合日常值守与快速操作。详细说明见 `docs/telegram_bot_usage.md`；首次上手见 `docs/telegram_bot_minimal_runbook.md`。
 
 ## 1) 启动
 
 ```bash
+# optional: initialize local secret config
+mkdir -p ~/.pybt
+cp examples/user_env_config.jsonc ~/.pybt/config.jsonc
+
 # server
 export PYBT_API_KEY=your_key
 export PYBT_BASE_DIR=$HOME/.pybt
@@ -37,10 +41,8 @@ pybt-bot
 - `/unsubscribe <run_id>`
 
 状态别名：`run/start/done/fail/stop/all`
-    `1`qe5t 
 
-# asdtfyuiop[]'\
-# 4) 草稿配置
+## 4) 草稿配置
 
 - `/draft_new [symbol]`
 - `/set_feed <plugin> key=value...`
@@ -72,3 +74,4 @@ pybt-bot
 
 - 插件 `load/unload` 影响后续新 run，不会中断已在运行中的 run。
 - `DataSourceStatusEvent` 仅 `status=error` 会推送告警消息（减少噪音）。
+- 默认生产数据源会读取 `~/.pybt/config.jsonc`（Sina headers / Eastmoney token+headers）。

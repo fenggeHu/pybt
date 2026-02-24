@@ -3,6 +3,16 @@
   "plugin": "eastmoney_marketdata",
   "params": {
     "symbol": "600000",
+    // Use user-local secret token/headers.
+    "token": {
+      "$ref": "~/.pybt/config.jsonc#secrets.eastmoney.token"
+    },
+    "headers": {
+      "$ref": "~/.pybt/config.jsonc#secrets.eastmoney.headers"
+    },
+    "snapshot_headers": {
+      "$ref": "~/.pybt/config.jsonc#secrets.eastmoney.snapshot_headers"
+    },
     "transport": "sse",
     "snapshot_fallback": true
   }

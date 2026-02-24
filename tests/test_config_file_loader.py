@@ -57,3 +57,42 @@ def test_load_config_dict_detects_ref_cycle(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="Cyclic \\$ref"):
         load_config_dict(tmp_path / "a.jsonc")
+
+
+def test_load_config_dict_supports_ref_fragment_and_scalar_target(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    user_cfg_dir = home / ".pybt"
+    user_cfg_dir.mkdir(parents=True)
+    (user_cfg_dir / "config.jsonc").write_text(
+        """
+        {
+          "secrets": {
+            "sina": {
+              "token": "abc-token",
+              "headers": {"Authorization": "Bearer abc-token"}
+            }
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    (tmp_path / "profile.jsonc").write_text(
+        """
+        {
+          "token": {"$ref": "~/.pybt/config.jsonc#secrets.sina.token"},
+          "headers": {
+            "$ref": "~/.pybt/config.jsonc#secrets.sina.headers",
+            "User-Agent": "UA"
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    cfg = load_config_dict(tmp_path / "profile.jsonc")
+    assert cfg["token"] == "abc-token"
+    assert cfg["headers"]["Authorization"] == "Bearer abc-token"
+    assert cfg["headers"]["User-Agent"] == "UA"

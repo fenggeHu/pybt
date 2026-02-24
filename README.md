@@ -40,7 +40,8 @@ pip install -e .[app]
 ------------
 `load_engine_from_json()` 支持：
 - `.json` / `.jsonc`（允许 `//`、`/* */` 注释与尾逗号）；
-- 局部 `$ref` 组合（可把数据源、策略、执行、风控拆成独立文件再组装）。
+- 局部 `$ref` 组合（可把数据源、策略、执行、风控拆成独立文件再组装）；
+- `$ref` 支持 `~`（如 `~/.pybt/config.jsonc`）与片段路径（如 `#secrets.sina.headers`）。
 
 推荐目录规划：
 - `configs/data_feeds/*.jsonc`
@@ -50,6 +51,34 @@ pip install -e .[app]
 - `configs/risk/*.jsonc`
 - `configs/reporters/*.jsonc`
 - `configs/profiles/*.jsonc`（组合入口，可直接用于 `--run-config`）
+
+用户敏感配置（推荐）：
+- 默认位置：`~/.pybt/config.jsonc`（`pybt`/`pybt-server`/`pybt-bot` 启动时会自动创建模板文件）。
+- 生产配置中通过 `$ref` 引用，避免把 token/cookie 明文写入仓库配置。
+- 模板示例：`examples/user_env_config.jsonc`
+
+快速初始化：
+
+```bash
+mkdir -p ~/.pybt
+cp examples/user_env_config.jsonc ~/.pybt/config.jsonc
+```
+
+示例：
+
+```json
+{
+  "headers": {
+    "$ref": "~/.pybt/config.jsonc#secrets.sina.headers",
+    "Referer": "https://finance.sina.com.cn/"
+  },
+  "token": {"$ref": "~/.pybt/config.jsonc#secrets.eastmoney.token"}
+}
+```
+
+当前内置生产配置已默认接入用户敏感配置：
+- `configs/data_feeds/sina_hq_api_live.jsonc` -> `~/.pybt/config.jsonc#secrets.sina.headers`
+- `configs/data_feeds/eastmoney_600000_sse.jsonc` -> `~/.pybt/config.jsonc#secrets.eastmoney.{token,headers,snapshot_headers}`
 
 装配规则（新）：
 
@@ -332,6 +361,7 @@ bash scripts/start_realtime_system.sh --check
 架构文档
 --------
 - `docs/architecture_and_functionality.md`: 项目系统架构与功能分析。
+- `docs/telegram_bot_minimal_runbook.md`: Telegram Bot 最小可运行手册（首次上手推荐）。
 - `docs/telegram_bot_usage.md`: Telegram Bot 运行编排与插件管理使用说明。
 - `docs/telegram_bot_quickref.md`: Telegram Bot 一页速查（值守/排障常用命令）。
 - `docs/diagrams/pybt-data-flow.drawio`: 可编辑的数据流程图（draw.io/diagrams.net）。
