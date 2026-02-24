@@ -24,6 +24,7 @@ Required env vars:
 
 Optional env vars:
   PYBT_PYTHON             Python executable (default: .venv/bin/python, python3.11, python3)
+  PYBT_ENV_FILE           Startup env file (default: $HOME/.pybt/.env.realtime)
   PYBT_SERVER_HOST        Default: 127.0.0.1
   PYBT_SERVER_PORT        Default: 8765
   PYBT_BASE_DIR           Default: $HOME/.pybt
@@ -40,6 +41,7 @@ EOF
 CHECK_ONLY=0
 DETACH=0
 RUN_CONFIG=""
+ENV_FILE="${PYBT_ENV_FILE:-${HOME}/.pybt/.env.realtime}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -95,9 +97,16 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -f "${REPO_ROOT}/.env.realtime" ]]; then
+if [[ ! -f "${ENV_FILE}" && -f "${REPO_ROOT}/.env.realtime" ]]; then
+  mkdir -p "$(dirname "${ENV_FILE}")"
+  cp "${REPO_ROOT}/.env.realtime" "${ENV_FILE}"
+  chmod 600 "${ENV_FILE}" || true
+  echo "[INFO] Migrated ${REPO_ROOT}/.env.realtime -> ${ENV_FILE}"
+fi
+
+if [[ -f "${ENV_FILE}" ]]; then
   set -a
-  source "${REPO_ROOT}/.env.realtime"
+  source "${ENV_FILE}"
   set +a
 fi
 

@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-ENV_FILE="${REPO_ROOT}/.env.realtime"
+ENV_FILE="${PYBT_ENV_FILE:-${HOME}/.pybt/.env.realtime}"
 TEMPLATE_USER_CFG="${REPO_ROOT}/examples/user_env_config.jsonc"
 DEFAULT_RUN_CONFIG="${REPO_ROOT}/configs/profiles/sina_hq_api_live.jsonc"
 
@@ -22,7 +22,7 @@ Options:
   --foreground           前台运行（默认后台 --detach）
   --detach               后台运行
   --run-config PATH      启动后自动提交配置并启动一次 run
-  --no-persist           不把输入内容保存到 .env.realtime
+  --no-persist           不把输入内容保存到 ${HOME}/.pybt/.env.realtime
   --help                 显示帮助
 
 Tips:
@@ -64,6 +64,13 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ ! -f "${ENV_FILE}" && -f "${REPO_ROOT}/.env.realtime" ]]; then
+  mkdir -p "$(dirname "${ENV_FILE}")"
+  cp "${REPO_ROOT}/.env.realtime" "${ENV_FILE}"
+  chmod 600 "${ENV_FILE}" || true
+  echo "已迁移 ${REPO_ROOT}/.env.realtime -> ${ENV_FILE}"
+fi
 
 if [[ -f "${ENV_FILE}" ]]; then
   set -a
