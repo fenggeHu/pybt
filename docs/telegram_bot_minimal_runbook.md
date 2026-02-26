@@ -34,6 +34,7 @@ export TELEGRAM_BOT_TOKEN=your_token
 export TELEGRAM_ADMIN_PASSWORD=your_password
 export PYBT_API_KEY=your_key
 export PYBT_SERVER_URL=http://127.0.0.1:8765
+export PYBT_BOT_ADVANCED=1
 pybt-bot
 ```
 

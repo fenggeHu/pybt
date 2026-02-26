@@ -363,22 +363,45 @@ def _format_plugins(payload: Any) -> str:
     return "\n".join(lines)
 
 
+def _to_bool_env(name: str, *, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    token = str(raw).strip().lower()
+    if token in {"1", "true", "on", "yes"}:
+        return True
+    if token in {"0", "false", "off", "no"}:
+        return False
+    return default
+
+
+def _advanced_mode_enabled() -> bool:
+    return _to_bool_env("PYBT_BOT_ADVANCED", default=False)
+
+
 def _program_help_text() -> str:
-    return "\n".join(
-        [
-            "Program/Plugin Commands:",
-            "/runs [state=<all|running|starting|completed|failed|stopped>|<state>] [limit=20]",
-            "/program_start <config_name|draft>",
-            "/program_stop <run_id>",
-            "/plugins [kind=<kind>|<kind>] [enabled=true|false|on|off]",
-            "/plugin_load <plugin_name>",
-            "/plugin_unload <plugin_name>",
-            "/program_help",
-            "/plugin_help",
-            "/run_compare <left_run_id> <right_run_id>",
-            "/run_signals <run_id> [strategy_id=...] [symbol=...] [since_seq=0] [limit=20] [include_debug=true|false]",
-        ]
+    start_usage = (
+        "/program_start <config_name|draft>"
+        if _advanced_mode_enabled()
+        else "/program_start <config_name>"
     )
+    lines = [
+        "Program/Plugin Commands:",
+        "/runs [state=<all|running|starting|completed|failed|stopped>|<state>] [limit=20]",
+        start_usage,
+        "/program_stop <run_id>",
+        "/plugins [kind=<kind>|<kind>] [enabled=true|false|on|off]",
+        "/plugin_load <plugin_name>",
+        "/plugin_unload <plugin_name>",
+        "/program_help",
+        "/plugin_help",
+        "/run_signals <run_id> [strategy_id=...] [symbol=...] [since_seq=0] [limit=20] [include_debug=true|false]",
+    ]
+    if _advanced_mode_enabled():
+        lines.append("/run_compare <left_run_id> <right_run_id>")
+    if not _advanced_mode_enabled():
+        lines.append("Tip: set PYBT_BOT_ADVANCED=1 to enable draft/config edit commands.")
+    return "\n".join(lines)
 
 
 def _plugin_filter_text(kind: Optional[str], enabled: Optional[bool]) -> str:
@@ -391,40 +414,52 @@ def _plugin_filter_text(kind: Optional[str], enabled: Optional[bool]) -> str:
 
 
 def _help_lines() -> list[str]:
-    return [
+    lines = [
         "Commands:",
         "/configs - list configs",
-        "/run - upload config.json or paste JSON",
         "/runs [state=<all|running|starting|completed|failed|stopped>|<state>] [limit=20]",
         "/status <run_id>",
         "/summary <run_id>",
-        "/program_start <config_name|draft>",
+        (
+            "/program_start <config_name|draft>"
+            if _advanced_mode_enabled()
+            else "/program_start <config_name>"
+        ),
         "/program_stop <run_id>",
         "/plugins [kind=<kind>|<kind>] [enabled=true|false|on|off]",
         "/plugin_load <plugin_name>",
         "/plugin_unload <plugin_name>",
         "/program_help",
         "/plugin_help",
-        "/run_compare <left_run_id> <right_run_id>",
         "/run_signals <run_id> [strategy_id=...] [symbol=...] [since_seq=0] [limit=20] [include_debug=true|false]",
         "/stop <run_id>",
         "/subscribe <run_id>",
         "/unsubscribe <run_id>",
-        "/draft_new [symbol]",
-        "/draft_show",
-        "/set_feed <plugin> key=value ... | JSON",
-        "/add_strategy <plugin> key=value ... | JSON",
-        "/set_strategy <index> <plugin> key=value ... | JSON",
-        "/del_strategy <index>",
-        "/list_strategy",
-        "/strategy on/off <index|strategy_id|all>",
-        "/save_draft <name.json> [force]",
-        "/run_draft",
-        "/definitions [kind]",
         "/login <password>",
         "/logout",
         "/menu",
     ]
+    if _advanced_mode_enabled():
+        lines.extend(
+            [
+                "/run_compare <left_run_id> <right_run_id>",
+                "/run - upload config.json or paste JSON",
+                "/draft_new [symbol]",
+                "/draft_show",
+                "/set_feed <plugin> key=value ... | JSON",
+                "/add_strategy <plugin> key=value ... | JSON",
+                "/set_strategy <index> <plugin> key=value ... | JSON",
+                "/del_strategy <index>",
+                "/list_strategy",
+                "/strategy on/off <index|strategy_id|all>",
+                "/save_draft <name.json> [force]",
+                "/run_draft",
+                "/definitions [kind]",
+            ]
+        )
+    else:
+        lines.append("Tip: set PYBT_BOT_ADVANCED=1 to enable draft/config edit commands.")
+    return lines
 
 
 _TELEGRAM_MODULE: Any = None
@@ -903,25 +938,29 @@ def _inline_menu_markup() -> Any:
             InlineKeyboardButton("Runs", callback_data="menu:runs"),
             InlineKeyboardButton("Configs", callback_data="menu:configs"),
         ],
-        [
-            InlineKeyboardButton("Run", callback_data="menu:run"),
-            InlineKeyboardButton("Plugins", callback_data="menu:plugins"),
-        ],
-        [
-            InlineKeyboardButton("Help", callback_data="menu:help"),
-        ],
     ]
+    if _advanced_mode_enabled():
+        keyboard.append(
+            [
+                InlineKeyboardButton("Run", callback_data="menu:run"),
+                InlineKeyboardButton("Plugins", callback_data="menu:plugins"),
+            ]
+        )
+    else:
+        keyboard.append([InlineKeyboardButton("Plugins", callback_data="menu:plugins")])
+    keyboard.append([InlineKeyboardButton("Help", callback_data="menu:help")])
     return InlineKeyboardMarkup(keyboard)
 
 
 def _reply_menu_markup() -> Any:
     telegram = _telegram()
     ReplyKeyboardMarkup = getattr(telegram, "ReplyKeyboardMarkup")
-    keyboard = [
-        ["Runs", "Configs"],
-        ["Run", "Plugins", "Help"],
-        ["Logout"],
-    ]
+    keyboard = [["Runs", "Configs"]]
+    if _advanced_mode_enabled():
+        keyboard.append(["Run", "Plugins", "Help"])
+    else:
+        keyboard.append(["Plugins", "Help"])
+    keyboard.append(["Logout"])
     return ReplyKeyboardMarkup(
         keyboard,
         resize_keyboard=True,
@@ -988,9 +1027,12 @@ async def on_button(update: Any, context: Any) -> None:
         await _button_show_configs(query, context, state)
         return
     if data == "menu:plugins":
-        await _button_show_plugins(query, context, state, kind=None, enabled=None)
+        await _button_show_plugins(query, context, state, kind=None, enabled=True)
         return
     if data == "menu:run":
+        if not _advanced_mode_enabled():
+            await query.answer("Advanced mode is disabled", show_alert=True)
+            return
         if not _require_auth_for_callback(state, update):
             await query.answer("Please /login in private chat first", show_alert=True)
             return
@@ -1785,10 +1827,20 @@ async def cmd_program_start(update: Any, context: Any) -> None:
         await msg.reply_text("Please /login <password> in a private chat first")
         return
     if not context.args:
-        await msg.reply_text("Usage: /program_start <config_name|draft>")
+        usage = (
+            "Usage: /program_start <config_name|draft>"
+            if _advanced_mode_enabled()
+            else "Usage: /program_start <config_name>"
+        )
+        await msg.reply_text(usage)
         return
     target = str(context.args[0]).strip()
     if target.lower() == "draft":
+        if not _advanced_mode_enabled():
+            await msg.reply_text(
+                "Draft mode is disabled. Set PYBT_BOT_ADVANCED=1 to enable."
+            )
+            return
         await cmd_run_draft(update, context)
         return
 
@@ -1851,6 +1903,8 @@ async def cmd_plugins(update: Any, context: Any) -> None:
             f"Invalid filters: {exc}\nUsage: /plugins [kind=<kind>|<kind>] [enabled=true|false|on|off]"
         )
         return
+    if "enabled" not in filters:
+        filters["enabled"] = True
     path = "/plugins"
     if filters:
         path = path + "?" + urlencode(filters)
@@ -2851,6 +2905,11 @@ def main() -> None:
 
     app = Application.builder().token(token).build()
     app.bot_data["state"] = state
+    advanced = _advanced_mode_enabled()
+    if not advanced:
+        LOGGER.info(
+            "Bot advanced commands are disabled (set PYBT_BOT_ADVANCED=1 to enable)."
+        )
 
     app.add_handler(CommandHandler(["help", "start"], cmd_help))
     app.add_handler(CommandHandler("login", cmd_login))
@@ -2858,7 +2917,6 @@ def main() -> None:
     app.add_handler(CommandHandler("menu", cmd_menu))
     app.add_handler(CommandHandler("configs", cmd_configs))
     app.add_handler(CommandHandler("runs", cmd_runs))
-    app.add_handler(CommandHandler("run", cmd_run))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("summary", cmd_summary))
     app.add_handler(CommandHandler("program_start", cmd_program_start))
@@ -2868,22 +2926,24 @@ def main() -> None:
     app.add_handler(CommandHandler("plugin_unload", cmd_plugin_unload))
     app.add_handler(CommandHandler("plugin_help", cmd_plugin_help))
     app.add_handler(CommandHandler("program_help", cmd_program_help))
-    app.add_handler(CommandHandler("run_compare", cmd_run_compare))
     app.add_handler(CommandHandler("run_signals", cmd_run_signals))
     app.add_handler(CommandHandler("stop", cmd_stop))
     app.add_handler(CommandHandler("subscribe", cmd_subscribe))
     app.add_handler(CommandHandler("unsubscribe", cmd_unsubscribe))
-    app.add_handler(CommandHandler("definitions", cmd_definitions))
-    app.add_handler(CommandHandler("draft_new", cmd_draft_new))
-    app.add_handler(CommandHandler("draft_show", cmd_draft_show))
-    app.add_handler(CommandHandler("set_feed", cmd_set_feed))
-    app.add_handler(CommandHandler("add_strategy", cmd_add_strategy))
-    app.add_handler(CommandHandler("set_strategy", cmd_set_strategy))
-    app.add_handler(CommandHandler("del_strategy", cmd_del_strategy))
-    app.add_handler(CommandHandler("list_strategy", cmd_list_strategy))
-    app.add_handler(CommandHandler("strategy", cmd_strategy_switch))
-    app.add_handler(CommandHandler("save_draft", cmd_save_draft))
-    app.add_handler(CommandHandler("run_draft", cmd_run_draft))
+    if advanced:
+        app.add_handler(CommandHandler("run_compare", cmd_run_compare))
+        app.add_handler(CommandHandler("run", cmd_run))
+        app.add_handler(CommandHandler("definitions", cmd_definitions))
+        app.add_handler(CommandHandler("draft_new", cmd_draft_new))
+        app.add_handler(CommandHandler("draft_show", cmd_draft_show))
+        app.add_handler(CommandHandler("set_feed", cmd_set_feed))
+        app.add_handler(CommandHandler("add_strategy", cmd_add_strategy))
+        app.add_handler(CommandHandler("set_strategy", cmd_set_strategy))
+        app.add_handler(CommandHandler("del_strategy", cmd_del_strategy))
+        app.add_handler(CommandHandler("list_strategy", cmd_list_strategy))
+        app.add_handler(CommandHandler("strategy", cmd_strategy_switch))
+        app.add_handler(CommandHandler("save_draft", cmd_save_draft))
+        app.add_handler(CommandHandler("run_draft", cmd_run_draft))
 
     app.add_handler(CallbackQueryHandler(on_button))
 

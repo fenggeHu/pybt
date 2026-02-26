@@ -1,0 +1,4 @@
+uvicorn
+fastapi~=0.112.2
+pandas
+futu-api>=9.4.54,<10

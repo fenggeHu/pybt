@@ -245,10 +245,24 @@ export TELEGRAM_BOT_TOKEN=your_token
 export TELEGRAM_ADMIN_PASSWORD=your_password
 export PYBT_API_KEY=your_key
 export PYBT_SERVER_URL=http://127.0.0.1:8765
+# 可选：开启高级草稿/配置编辑命令（默认关闭）
+# export PYBT_BOT_ADVANCED=1
 pybt-bot
 ```
 
-Telegram 命令化配置（数据源/策略）：
+Telegram 运行命令（默认）：
+- `/runs [state=<all|running|starting|completed|failed|stopped>|<state>] [limit=20]`：查看运行列表（支持状态过滤）。
+- `Runs` 按钮页支持 `All/Running/Failed/Completed/Stopped/Refresh` 快捷过滤。
+- `/program_start <config_name>`：启动程序（配置名）。
+- `/program_stop <run_id>`：停止程序。
+- `/plugins [kind=<kind>|<kind>] [enabled=true|false|on|off]`：查看插件状态（默认 `enabled=true`，即只显示已启用插件）。
+- `/plugin_load <plugin_name>`：加载（启用）插件。
+- `/plugin_unload <plugin_name>`：卸载（停用）插件。
+- `/program_help`：程序/插件相关命令帮助（同 `/plugin_help`）。
+- `/plugin_help`：查看上述命令用法。
+- `/run_signals <run_id> [strategy_id=...] [symbol=...] [since_seq=0] [limit=20] [include_debug=true|false]`：查看信号与策略调试事件。
+
+Telegram 高级配置命令（需 `PYBT_BOT_ADVANCED=1`）：
 - `/definitions [data_feed|strategy|portfolio|execution|risk|reporter]`：查看支持的组件类型。
 - `/draft_new [symbol]`：创建/重置当前草稿配置（按用户隔离）。
 - `/set_feed <plugin> key=value...` 或 `/set_feed {"plugin":"...","params":{...}}`：设置数据源。
@@ -260,17 +274,7 @@ Telegram 命令化配置（数据源/策略）：
 - `/draft_show`：查看当前草稿 JSON。
 - `/save_draft <name.json> [force]`：保存到 server 配置中心。
 - `/run_draft`：直接以内联配置启动运行（无需先保存）。
-- `/runs [state=<all|running|starting|completed|failed|stopped>|<state>] [limit=20]`：查看运行列表（支持状态过滤）。
-- `Runs` 按钮页支持 `All/Running/Failed/Completed/Stopped/Refresh` 快捷过滤。
-- `/program_start <config_name|draft>`：启动程序（配置名或当前 draft）。
-- `/program_stop <run_id>`：停止程序。
-- `/plugins [kind=<kind>|<kind>] [enabled=true|false|on|off]`：查看插件状态。
-- `/plugin_load <plugin_name>`：加载（启用）插件。
-- `/plugin_unload <plugin_name>`：卸载（停用）插件。
-- `/program_help`：程序/插件相关命令帮助（同 `/plugin_help`）。
-- `/plugin_help`：查看上述命令用法。
 - `/run_compare <left_run_id> <right_run_id>`：比较两次运行（事件计数差异 + summary 数值差异）。
-- `/run_signals <run_id> [strategy_id=...] [symbol=...] [since_seq=0] [limit=20] [include_debug=true|false]`：查看信号与策略调试事件。
 
 策略调试参数（`strategies[].params`）：
 - `moving_average` / `uptrend` 支持 `debug_signal=true`，会额外发出 `StrategyDebugEvent`，用于排查“为什么这根K线没有出信号”。

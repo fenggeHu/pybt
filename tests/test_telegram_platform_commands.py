@@ -4,6 +4,7 @@ from apps.telegram_bot.telegram_bot import (
     _close_shared_http_client,
     _filter_runs_for_display,
     _format_compare_response,
+    _help_lines,
     _format_plugins,
     _format_signal_items,
     _parse_runs_tokens,
@@ -126,10 +127,34 @@ def test_format_plugins_contains_status_lines() -> None:
 
 def test_program_help_text_contains_new_commands() -> None:
     text = _program_help_text()
-    assert "/program_start <config_name|draft>" in text
+    assert "/program_start <config_name>" in text
     assert "/program_stop <run_id>" in text
     assert "/plugins [kind=<kind>|<kind>] [enabled=true|false|on|off]" in text
     assert "/program_help" in text
+    assert "/run_compare <left_run_id> <right_run_id>" not in text
+
+
+def test_program_help_text_includes_draft_when_advanced(monkeypatch) -> None:
+    monkeypatch.setenv("PYBT_BOT_ADVANCED", "1")
+    text = _program_help_text()
+    assert "/program_start <config_name|draft>" in text
+    assert "/run_compare <left_run_id> <right_run_id>" in text
+
+
+def test_help_lines_hides_draft_commands_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("PYBT_BOT_ADVANCED", raising=False)
+    lines = _help_lines()
+    joined = "\n".join(lines)
+    assert "/run_draft" not in joined
+    assert "/set_feed" not in joined
+
+
+def test_help_lines_shows_draft_commands_when_advanced(monkeypatch) -> None:
+    monkeypatch.setenv("PYBT_BOT_ADVANCED", "true")
+    lines = _help_lines()
+    joined = "\n".join(lines)
+    assert "/run_draft" in joined
+    assert "/set_feed" in joined
 
 
 def test_shared_http_client_reused_between_calls() -> None:

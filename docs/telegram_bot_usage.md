@@ -31,6 +31,8 @@ export TELEGRAM_BOT_TOKEN=your_token
 export TELEGRAM_ADMIN_PASSWORD=your_password
 export PYBT_API_KEY=your_key
 export PYBT_SERVER_URL=http://127.0.0.1:8765
+# 可选：开启高级草稿/配置编辑命令（默认关闭）
+# export PYBT_BOT_ADVANCED=1
 
 pybt-bot
 ```
@@ -96,15 +98,20 @@ python -m pybt --config ./configs/profiles/eastmoney_sse_prod.jsonc --self-check
 - `/runs [state=<all|running|starting|completed|failed|stopped>|<state>] [limit=20]`
 - `/status <run_id>`
 - `/summary <run_id>`
-- `/program_start <config_name|draft>`
+- `/program_start <config_name>`
 - `/program_stop <run_id>`
 - `/stop <run_id>`（兼容命令）
-- `/run_compare <left_run_id> <right_run_id>`
 - `/run_signals <run_id> [strategy_id=...] [symbol=...] [since_seq=0] [limit=20] [include_debug=true|false]`
 - `/subscribe <run_id>`
 - `/unsubscribe <run_id>`
 
-### 3.2 配置与草稿
+### 3.2 配置与草稿（高级模式）
+
+默认关闭。启用方式：
+
+```bash
+export PYBT_BOT_ADVANCED=1
+```
 
 - `/configs`
 - `/definitions [data_feed|strategy|portfolio|execution|risk|reporter]`
@@ -119,10 +126,11 @@ python -m pybt --config ./configs/profiles/eastmoney_sse_prod.jsonc --self-check
 - `/strategy on/off <index|strategy_id|all>`
 - `/save_draft <name.json> [force]`
 - `/run_draft`
+- `/run_compare <left_run_id> <right_run_id>`
 
 ### 3.3 插件管理
 
-- `/plugins [kind=<kind>|<kind>] [enabled=true|false|on|off]`
+- `/plugins [kind=<kind>|<kind>] [enabled=true|false|on|off]`（默认 `enabled=true`，即仅显示已启用插件）
 - `/plugin_load <plugin_name>`
 - `/plugin_unload <plugin_name>`
 - `/program_help`（同 `/plugin_help`）
@@ -150,8 +158,8 @@ python -m pybt --config ./configs/profiles/eastmoney_sse_prod.jsonc --self-check
 
 ### 4.2 `/program_start` 用法
 
-- `/program_start draft`：直接运行当前用户草稿
 - `/program_start xxx`：自动补全为 `xxx.json` 后按保存配置启动
+- （高级模式）`/program_start draft`：直接运行当前用户草稿
 
 ### 4.3 `/run_compare` 用法
 
@@ -182,6 +190,8 @@ python -m pybt --config ./configs/profiles/eastmoney_sse_prod.jsonc --self-check
 /plugins data_feed on
 /plugins kind=data_feed enabled=false
 ```
+
+说明：`/plugins` 不带 `enabled` 时默认按 `enabled=true` 过滤。
 
 ### 5.2 启用/停用插件
 
@@ -219,6 +229,8 @@ python -m pybt --config ./configs/profiles/eastmoney_sse_prod.jsonc --self-check
 - `Load` 或 `Unload`
 
 ## 7. 草稿推荐工作流
+
+需要先启用高级模式（`PYBT_BOT_ADVANCED=1`）：
 
 ```text
 /draft_new 600000

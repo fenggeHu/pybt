@@ -19,6 +19,8 @@ export TELEGRAM_BOT_TOKEN=your_token
 export TELEGRAM_ADMIN_PASSWORD=your_password
 export PYBT_API_KEY=your_key
 export PYBT_SERVER_URL=http://127.0.0.1:8765
+# optional: enable advanced draft/config editing commands
+# export PYBT_BOT_ADVANCED=1
 pybt-bot
 ```
 
@@ -33,16 +35,17 @@ pybt-bot
 - `/runs [state=<all|running|starting|completed|failed|stopped>|<state>] [limit=20]`
 - `/status <run_id>`
 - `/summary <run_id>`
-- `/program_start <config_name|draft>`
+- `/program_start <config_name>`
 - `/program_stop <run_id>`
-- `/run_compare <left_run_id> <right_run_id>`
 - `/run_signals <run_id> [strategy_id=...] [symbol=...] [since_seq=0] [limit=20] [include_debug=true|false]`
 - `/subscribe <run_id>`
 - `/unsubscribe <run_id>`
 
 状态别名：`run/start/done/fail/stop/all`
 
-## 4) 草稿配置
+## 4) 草稿配置（高级模式）
+
+先设置：`export PYBT_BOT_ADVANCED=1`
 
 - `/draft_new [symbol]`
 - `/set_feed <plugin> key=value...`
@@ -54,10 +57,11 @@ pybt-bot
 - `/draft_show`
 - `/save_draft <name.json> [force]`
 - `/run_draft`
+- `/run_compare <left_run_id> <right_run_id>`
 
 ## 5) 插件管理
 
-- `/plugins [kind=<kind>|<kind>] [enabled=true|false|on|off]`
+- `/plugins [kind=<kind>|<kind>] [enabled=true|false|on|off]`（默认 `enabled=true`）
 - `/plugin_load <plugin_name>`
 - `/plugin_unload <plugin_name>`
 - `/program_help`（同 `/plugin_help`）
